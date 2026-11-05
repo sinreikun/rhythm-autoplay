@@ -57,6 +57,7 @@ jobs:
           } else {
             "exists=false" >> $env:GITHUB_OUTPUT
           }
+          $global:LASTEXITCODE = 0
 
       - name: Create release
         if: steps.exists.outputs.exists == 'false'
