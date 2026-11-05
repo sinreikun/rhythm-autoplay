@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- 本体 exe 名はランチャー側の BodyExeName と一致させること。 -->
+    <AssemblyName>RhythmAutoplayBody</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RhythmAutoplay.Core\RhythmAutoplay.Core.csproj" />
+  </ItemGroup>
+
+</Project>
