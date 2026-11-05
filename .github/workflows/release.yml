@@ -1,0 +1,71 @@
+name: release
+
+# 改修ごとに version.txt を上げて main へ push すると、テスト→ビルド→Release 公開まで自動で行う。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.txt -Raw).Trim()
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "TAG=v$version" >> $env:GITHUB_ENV
+          Write-Host "Version: $version (tag: v$version)"
+
+      - name: Test
+        run: dotnet test tests/RhythmAutoplay.Core.Tests/RhythmAutoplay.Core.Tests.csproj -c Release
+
+      - name: Publish launcher (Native AOT, single exe)
+        run: dotnet publish src/RhythmAutoplay.Launcher/RhythmAutoplay.Launcher.csproj -c Release -r win-x64 -o publish/launcher
+
+      - name: Publish body (self-contained single file)
+        shell: pwsh
+        run: |
+          dotnet publish src/RhythmAutoplay.App/RhythmAutoplay.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/body
+          Copy-Item -Recurse profiles publish/body/profiles
+          Compress-Archive -Path publish/body/* -DestinationPath publish/RhythmAutoplay-Body.zip
+          $hash = (Get-FileHash publish/RhythmAutoplay-Body.zip -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path publish/RhythmAutoplay-Body.sha256 -Value $hash -NoNewline
+          Write-Host "Body SHA-256: $hash"
+
+      - name: Check whether this version is already released
+        id: exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "exists=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Release $env:TAG already exists; skipping publish."
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Create release
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create $env:TAG `
+            "publish/launcher/RhythmAutoplay.exe" `
+            "publish/RhythmAutoplay-Body.zip" `
+            "publish/RhythmAutoplay-Body.sha256" `
+            --title "RhythmAutoplay $env:TAG" `
+            --notes "RhythmAutoplay $env:TAG. 配布物は RhythmAutoplay.exe（ランチャー）のみです。本体はランチャーが自動で取得・更新します。詳細は README と docs/design.md を参照してください。"
