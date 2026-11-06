@@ -195,6 +195,25 @@ public sealed class LaneNoteTracker : ILaneTracker
             }
         }
 
+        // 検出が止まった軌跡の救済（v0.3.24）: 判定帯の近くではノーツが
+        // 判定バーやエフェクトに埋もれて検出が途切れる。予約の試行が
+        // 「検出と結びついたフレーム」でしか起きないと、適合の良い軌跡でも
+        // 確定窓に入る前に最後の検出から 0.25 秒のタイムアウトを迎え、
+        // 死に際の救済では予測到達時刻が過去猶予 (0.02 秒) を過ぎていて
+        // 捨てられてしまう（Floating の未予約ゴースト実測: 確定窓
+        // 150ms→67 件 / 100ms→97 件 / 70ms→146 件と、窓を狭めるほど増えた）。
+        // 未マッチの軌跡についても毎フレーム予約を試み、凍結した標本の
+        // 予測が確定窓に入った時点で予約する。ゲートは通常経路と同一。
+        foreach (Track t in _tracks)
+        {
+            if (!t.Scheduled && !matched.Contains(t) && t.Samples.Count >= 3
+                && TryBuildSchedule(t, timeSeconds, bypassCommit: false) is { } starved)
+            {
+                t.Scheduled = true;
+                ready.Add(starved);
+            }
+        }
+
         foreach (Track t in _tracks)
         {
             if (timeSeconds - t.LastSeenTime > _trackTimeoutSeconds

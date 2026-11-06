@@ -180,6 +180,38 @@ public class LaneNoteTrackerTests
     }
 
     [Fact]
+    public void StarvedTrack_SchedulesFromFrozenFit()
+    {
+        // 判定帯の近くで検出が途切れた軌跡は、検出と結びつかない
+        // フレームでも、凍結した標本の予測が確定窓に入れば予約される。
+        // (v0.3.24: 従来はタイムアウト時の死に際救済しか残らず、
+        // 予測到達時刻が過去猶予を過ぎて捨てられていた。)
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, commitWindowSeconds: 0.15);
+        int scheduledCount = 0;
+        double scheduledHit = 0;
+        double scheduledAt = 0;
+        // 等速 0.9/s: 0.30 + 0.9 t = 0.94 -> 到達 t = 0.7111。
+        // t=0.52 (到達まで 0.19 秒、確定窓 0.15 の外) で検出が止まる。
+        for (int i = 0; i <= 200; i++)
+        {
+            double t = i / 60.0;
+            var dets = t <= 0.52
+                ? new[] { new NoteDetection(0, NoteKind.Red, null, 0.4, 0.30 + 0.9 * t, t) }
+                : Array.Empty<NoteDetection>();
+            foreach (var note in tracker.Observe(t, dets))
+            {
+                scheduledCount++;
+                scheduledHit = note.THit;
+                scheduledAt = t;
+            }
+        }
+        Assert.Equal(1, scheduledCount);
+        Assert.Equal(0.7111, scheduledHit, precision: 2);
+        // 到達前に予約が確定していること（死に際の遅すぎる発火ではない）。
+        Assert.True(scheduledAt < scheduledHit);
+    }
+
+    [Fact]
     public void SpawnGate_NoteBornBelowGate_NeverSchedules()
     {
         // 判定文字やコンボ数字のような UI は画面下部にいきなり現れる。
@@ -483,16 +515,23 @@ public class ProjectivePredictorTests
     }
 
     [Fact]
-    public void Tracker_SilentTrackNearWindow_DoesNotCommitOnSilentFrames()
+    public void Tracker_SilentTrackNearWindow_CommitsOnSilentFrames()
     {
-        // v0.3.13 で v0.3.11 の挙動に戻したことの記録: 到達直前で検出が止まった
-        // 軌跡は、検出のないフレームでは予測を試さないため、確定窓が開いても
-        // 予約されず、タイムアウト時の死に際救済でも到達時刻が猶予（0.02 秒）を
-        // 過ぎていて救えない。v0.3.12 の毎フレーム試行はこの欠落を埋めたが、
-        // 実機では余分な発火が増えて小幅な悪化だったため取り下げた。
+        // 履歴: v0.3.11 の挙動では、到達直前で検出が止まった軌跡は確定窓が
+        // 開いても予約されず、死に際救済でも到達時刻が猶予 (0.02 秒) を
+        // 過ぎていて救えなかった。v0.3.12 の毎フレーム試行はこの欠落を
+        // 埋めたが、過去猶予 0.12 秒との抱き合わせ・重複抑制なしの条件で
+        // 実機小幅悪化となり v0.3.13 で取り下げた。
+        // v0.3.24 で再導入する根拠: セッションログの X 行フォレンジクスで、
+        // 適合の良い (残差中央値 0.001 台) 未予約軌跡が Floating 1 ランに
+        // 67〜146 件死んでおり、その数が確定窓を狭めるほど増えて CRINGE と
+        // 連動していた。今回は未マッチ軌跡に限り、ゲート不変・猶予不変・
+        // 重複抑制ありの条件で、凍結標本の予測が確定窓に入った時点で予約
+        // する。成否は実機 A/B で判断する。
         var tracker = new LaneNoteTracker(
             judgmentY: 0.94, vanishingY: 0.12, commitWindowSeconds: 0.15);
         int scheduled = 0;
+        double hit = 0;
         // t=0..0.9333 まで標本（到達 1.1301 まで 0.197 秒 = 窓の外）
         for (int i = 0; i <= 56; i++)
         {
@@ -502,17 +541,22 @@ public class ProjectivePredictorTests
             scheduled += tracker.Observe(t, new[] { det }).Count;
         }
         Assert.Equal(0, scheduled);
-        // 以後は検出なし。タイムアウト（最終検出 +0.25 秒 = 1.1833）まで回しても
-        // 予約は生まれず、軌跡は未予約のまま回収される。
+        // 以後は検出なし。確定窓が開く t=0.9801 以降の無検出フレームで、
+        // 凍結した標本の予測のまま 1 件だけ予約される。
         for (int i = 57; i <= 75; i++)
         {
             double t = i / 60.0;
-            scheduled += tracker.Observe(t, Array.Empty<NoteDetection>()).Count;
+            foreach (var sn in tracker.Observe(t, Array.Empty<NoteDetection>()))
+            {
+                scheduled++;
+                hit = sn.THit;
+            }
         }
-        Assert.Equal(0, scheduled);
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
         var expired = tracker.DrainExpired();
         Assert.Single(expired);
-        Assert.False(expired[0].Scheduled);
+        Assert.True(expired[0].Scheduled);
     }
 
     // 帯域トリガー（v0.3.14）用の合成運動: 実機の幾何（判定 0.941、消失点
