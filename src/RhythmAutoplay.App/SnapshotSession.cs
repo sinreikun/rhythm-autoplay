@@ -18,12 +18,20 @@ public sealed class SnapshotSession
 {
     private readonly GameProfile _profile;
     private readonly SnapshotOptions _options;
+    private readonly Action<string>? _log;
     private volatile bool _cancelled;
 
-    public SnapshotSession(GameProfile profile, SnapshotOptions options)
+    public SnapshotSession(GameProfile profile, SnapshotOptions options, Action<string>? log = null)
     {
         _profile = profile;
         _options = options;
+        _log = log;
+    }
+
+    private void Log(string message)
+    {
+        Console.WriteLine(message);
+        _log?.Invoke(message);
     }
 
     public int Run()
@@ -39,7 +47,7 @@ public sealed class SnapshotSession
         }
         if (hwnd == IntPtr.Zero)
         {
-            Console.WriteLine("ウィンドウが見つかりませんでした。");
+            Log("ウィンドウが見つかりませんでした。");
             return 1;
         }
 
@@ -95,7 +103,7 @@ public sealed class SnapshotSession
         }
 
         File.WriteAllLines(Path.Combine(outDir, "detections.txt"), lines);
-        Console.WriteLine($"スナップショットを保存しました: {outDir}（{index} フレーム, 検出 {totalDetections} 件）");
+        Log($"スナップショットを保存しました: {outDir}（{index} フレーム, 検出 {totalDetections} 件）");
         return 0;
     }
 
