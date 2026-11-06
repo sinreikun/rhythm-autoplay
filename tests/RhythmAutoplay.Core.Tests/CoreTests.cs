@@ -565,11 +565,11 @@ public class ProjectivePredictorTests
         // 前半が予約した到達時刻とほぼ同じ後半の予約は抑制される。
         var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
         int scheduled = 0;
-        for (int i = 100; i <= 126; i++)
+        for (int i = 100; i <= 130; i++)
         {
             double t = i / 60.0;
             bool firstFragment = t <= 1.85;
-            bool secondFragment = t >= 2.0167;
+            bool secondFragment = t >= 2.0;
             var dets = (firstFragment || secondFragment)
                 ? new[] { new NoteDetection(0, NoteKind.Red, null, 0.4, BandLawY(t), t) }
                 : Array.Empty<NoteDetection>();
