@@ -515,158 +515,105 @@ public class ProjectivePredictorTests
         Assert.False(expired[0].Scheduled);
     }
 
+    // 帯域トリガー（v0.3.14）用の合成運動: 実機の幾何（判定 0.941、消失点
+    // 0.39）と実測レート（w の減少速度 1.86/秒）で組み立てる。
+    // 出現 Y=0.563、判定到達は t=2.1318。帯（0.76〜0.905）には
+    // t=1.6545 で入り、t=2.0636 で出る。
+    private static double BandLawY(double t) => 0.39 + 1.0 / (5.78 - 1.86 * t);
+
     [Fact]
-    public void Tracker_Stitching_RevivesArrowAfterGap()
+    public void Band_SteadyNote_SchedulesOnceAtBandExit()
     {
-        // 縫合（v0.3.13）: 前半は方向が読めず未予約のまま死んだ矢印でも、
-        // 後半の断片が同じ軌道で現れれば旧軌跡に繋ぎ直され、標本を
-        // 引き継いだうえで、方向票が入った瞬間に予約される
-        // （断片単独では標本の貯まり直しが必要になる）。
-        var tracker = new LaneNoteTracker(judgmentY: 0.94, vanishingY: 0.12);
+        var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
         int scheduled = 0;
-        ScheduledNote got = default;
-        // 前半 t=0..0.5: 方向なし
-        for (int i = 0; i <= 30; i++)
+        double hit = 0;
+        for (int i = 96; i <= 138; i++)
         {
             double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, y, t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, BandLawY(t), t);
+            foreach (var sn in tracker.Observe(t, new[] { det }))
+            {
+                scheduled++;
+                hit = sn.THit;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(2.1318, hit, precision: 2);
+    }
+
+    [Fact]
+    public void Band_StaticBlob_NeverSchedules()
+    {
+        // 帯の中で静止する塊（判定文字など）は、速度ゲートで弾かれる。
+        var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
+        int scheduled = 0;
+        for (int i = 0; i <= 78; i++)
+        {
+            double t = i / 60.0;
+            var dets = t <= 1.0
+                ? new[] { new NoteDetection(0, NoteKind.Yellow, null, 0.4, 0.83, t) }
+                : Array.Empty<NoteDetection>();
+            scheduled += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(0, scheduled);
+    }
+
+    [Fact]
+    public void Band_FragmentedNote_SecondFragmentSuppressed()
+    {
+        // 帯の中で検出が途切れて 2 つの候補に割れても、二重発火はしない:
+        // 前半が予約した到達時刻とほぼ同じ後半の予約は抑制される。
+        var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
+        int scheduled = 0;
+        for (int i = 100; i <= 126; i++)
+        {
+            double t = i / 60.0;
+            bool firstFragment = t <= 1.85;
+            bool secondFragment = t >= 2.0167;
+            var dets = (firstFragment || secondFragment)
+                ? new[] { new NoteDetection(0, NoteKind.Red, null, 0.4, BandLawY(t), t) }
+                : Array.Empty<NoteDetection>();
+            scheduled += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(1, scheduled);
+        var suppressed = tracker.DrainSuppressed();
+        Assert.Single(suppressed);
+        Assert.Equal(NoteKind.Red, suppressed[0].Kind);
+    }
+
+    [Fact]
+    public void Band_DensePair_BothSchedule()
+    {
+        // 0.12 秒差の同レーン 2 連は、両方とも独立に予約される
+        // （抑制の窓 0.07 秒より離れているため）。
+        var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
+        int scheduled = 0;
+        for (int i = 96; i <= 150; i++)
+        {
+            double t = i / 60.0;
+            var dets = new List<NoteDetection>
+            {
+                new(0, NoteKind.Red, null, 0.4, BandLawY(t - 0.12), t),
+                new(0, NoteKind.Red, null, 0.4, BandLawY(t), t),
+            };
+            scheduled += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(2, scheduled);
+        Assert.Empty(tracker.DrainSuppressed());
+    }
+
+    [Fact]
+    public void Band_ArrowWithoutDirection_NeverSchedules()
+    {
+        var tracker = new BandNoteTracker(judgmentY: 0.941, vanishingY: 0.39);
+        int scheduled = 0;
+        for (int i = 96; i <= 138; i++)
+        {
+            double t = i / 60.0;
+            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, BandLawY(t), t);
             scheduled += tracker.Observe(t, new[] { det }).Count;
         }
         Assert.Equal(0, scheduled);
-        // 検出が途切れる（タイムアウトで死亡、死骸として保持される）
-        for (int i = 31; i <= 51; i++)
-        {
-            double t = i / 60.0;
-            scheduled += tracker.Observe(t, Array.Empty<NoteDetection>()).Count;
-        }
-        Assert.Equal(0, scheduled);
-        // 後半 t=0.8667..: 同じ軌道上に、方向つきで再出現
-        for (int i = 52; i <= 68; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.4, y, t);
-            foreach (var sn in tracker.Observe(t, new[] { det }))
-            {
-                scheduled++;
-                got = sn;
-            }
-        }
-        Assert.Equal(1, scheduled);
-        Assert.Equal(ArrowDirection.Left, got.Direction);
-        Assert.Equal(1.1301, got.THit, precision: 2);
-        // 前半の標本（31 件）を引き継いでいる
-        Assert.True(got.SampleCount >= 32, $"SampleCount={got.SampleCount}");
     }
 
-    [Fact]
-    public void Tracker_StitchingDisabled_FragmentRestartsFromScratch()
-    {
-        // 対照: 縫合を切ると、後半の断片は新規の軌跡として標本を
-        // 貯め直すため、予約時の標本数が少ない。
-        var tracker = new LaneNoteTracker(
-            judgmentY: 0.94, vanishingY: 0.12, stitchWindowSeconds: 0);
-        int scheduled = 0;
-        ScheduledNote got = default;
-        for (int i = 0; i <= 30; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, y, t);
-            scheduled += tracker.Observe(t, new[] { det }).Count;
-        }
-        for (int i = 31; i <= 51; i++)
-        {
-            double t = i / 60.0;
-            scheduled += tracker.Observe(t, Array.Empty<NoteDetection>()).Count;
-        }
-        for (int i = 52; i <= 68; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.4, y, t);
-            foreach (var sn in tracker.Observe(t, new[] { det }))
-            {
-                scheduled++;
-                got = sn;
-            }
-        }
-        Assert.Equal(1, scheduled);
-        Assert.True(got.SampleCount <= 5, $"SampleCount={got.SampleCount}");
-    }
-
-    [Fact]
-    public void Tracker_Stitching_DoesNotReviveDifferentTrajectory()
-    {
-        // 別ノーツの出現は縫合しない: 死骸の外挿位置から大きく外れた
-        // 検出（別の軌道）は、新規の軌跡として独立に処理される。
-        var tracker = new LaneNoteTracker(judgmentY: 0.94, vanishingY: 0.12);
-        int scheduled = 0;
-        ScheduledNote got = default;
-        for (int i = 0; i <= 30; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, y, t);
-            scheduled += tracker.Observe(t, new[] { det }).Count;
-        }
-        for (int i = 31; i <= 51; i++)
-        {
-            double t = i / 60.0;
-            scheduled += tracker.Observe(t, Array.Empty<NoteDetection>()).Count;
-        }
-        // 別の軌道（遅い）で t=0.8667 から出現する矢印
-        for (int i = 52; i <= 80; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (10.0 - 6.0 * (t - 0.8667));
-            var det = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.4, y, t);
-            foreach (var sn in tracker.Observe(t, new[] { det }))
-            {
-                scheduled++;
-                got = sn;
-            }
-        }
-        Assert.Equal(1, scheduled);
-        // 出現時刻が後半の断片のもの（0.8667）のまま = 旧軌跡とは混ざっていない
-        Assert.Equal(0.8667, got.FirstTime, precision: 2);
-    }
-
-    [Fact]
-    public void Tracker_Stitching_ExpiresAfterWindow()
-    {
-        // 縫合の猶予を過ぎた死骸は使わない: 同じ軌道の断片でも、
-        // 窓の外で現れれば新規の軌跡として扱われる。
-        var tracker = new LaneNoteTracker(
-            judgmentY: 0.94, vanishingY: 0.12, stitchWindowSeconds: 0.10);
-        int scheduled = 0;
-        ScheduledNote got = default;
-        for (int i = 0; i <= 30; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, y, t);
-            scheduled += tracker.Observe(t, new[] { det }).Count;
-        }
-        // 死亡は t=0.7667 頃。猶予 0.10 秒は t=0.8667 で切れる
-        for (int i = 31; i <= 52; i++)
-        {
-            double t = i / 60.0;
-            scheduled += tracker.Observe(t, Array.Empty<NoteDetection>()).Count;
-        }
-        for (int i = 53; i <= 68; i++)
-        {
-            double t = i / 60.0;
-            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
-            var det = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.4, y, t);
-            foreach (var sn in tracker.Observe(t, new[] { det }))
-            {
-                scheduled++;
-                got = sn;
-            }
-        }
-        Assert.Equal(1, scheduled);
-        Assert.True(got.SampleCount <= 5, $"SampleCount={got.SampleCount}");
-    }
 }

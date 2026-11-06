@@ -14,6 +14,8 @@ public sealed class PlayOptions
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
     public string? EventLogDirectory { get; init; }
+    /// <summary>追跡エンジン: "track"（全飛行の軌跡追跡、v0.3.11 系）または "band"（帯域トリガー、v0.3.14）。</summary>
+    public string Engine { get; init; } = "track";
 }
 
 /// <summary>プレイ中の統計。GUI がポーリングして表示する。</summary>
@@ -74,7 +76,7 @@ public sealed class PlaySession
 
         using var capturer = new WindowCapturer(hwnd);
         var detector = new FrameDetector(_profile);
-        var trackers = new LaneNoteTracker[_profile.LaneCount];
+        var trackers = new ILaneTracker[_profile.LaneCount];
         // 出現ゲートは判定ライン際の静止物（BREAK バー等）だけを弾く緩い
         // 境界に留める。UI と本物の見分けは追跡器側の「動きの確認」が担う:
         // 高速譜面（TRANCE）では本物のノーツの初検出が Y≈0.78〜0.80 まで
@@ -82,17 +84,21 @@ public sealed class PlaySession
         // （v0.3.5/0.3.6 の実測: レーンノーツの予約がほぼ全滅した）。
         double spawnGateY = _profile.Geometry.TopY
             + 0.84 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
+        bool useBand = string.Equals(_options.Engine, "band", StringComparison.OrdinalIgnoreCase);
         for (int lane = 0; lane < trackers.Length; lane++)
         {
-            trackers[lane] = new LaneNoteTracker(
-                _profile.JudgmentLineY,
-                vanishingY: _profile.Geometry.VanishingY,
-                spawnGateY: spawnGateY,
-                scheduleHorizonSeconds: 1.2,
-                commitWindowSeconds: 0.15,
-                stitchWindowSeconds: 0.45,
-                stitchToleranceY: 0.09);
+            trackers[lane] = useBand
+                ? new BandNoteTracker(
+                    _profile.JudgmentLineY,
+                    vanishingY: _profile.Geometry.VanishingY)
+                : new LaneNoteTracker(
+                    _profile.JudgmentLineY,
+                    vanishingY: _profile.Geometry.VanishingY,
+                    spawnGateY: spawnGateY,
+                    scheduleHorizonSeconds: 1.2,
+                    commitWindowSeconds: 0.15);
         }
+        Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : "track（軌跡追跡）")}");
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
 
@@ -202,6 +208,11 @@ public sealed class PlaySession
                     {
                         Log($"[dry] lane={group.Key + 1} {sn.Kind} dir={sn.Direction?.ToString() ?? "-"} t_hit まで {sn.THit - now:F3}s");
                     }
+                }
+                foreach (SuppressedDuplicate sd in trackers[group.Key].DrainSuppressed())
+                {
+                    eventLog?.WriteLine(
+                        $"D lane={group.Key} kind={sd.Kind} tHit={sd.THit:F3}");
                 }
                 foreach (ExpiredTrack ex in trackers[group.Key].DrainExpired())
                 {

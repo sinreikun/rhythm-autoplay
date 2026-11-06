@@ -27,7 +27,7 @@ public readonly record struct ExpiredTrack(
 /// 予測は設計の核（docs/design.md §3）: 「判定ラインに来てから押す」のではなく
 /// 「到達時刻を推定して未来に入力を予約する」。
 /// </summary>
-public sealed class LaneNoteTracker
+public sealed class LaneNoteTracker : ILaneTracker
 {
     private sealed class Track
     {
@@ -64,7 +64,6 @@ public sealed class LaneNoteTracker
     }
 
     private readonly List<Track> _tracks = new();
-    private readonly List<(Track Track, double DeathTime)> _corpses = new();
     private readonly double _judgmentY;
     private readonly double _matchToleranceY;
     private readonly double _trackTimeoutSeconds;
@@ -73,8 +72,6 @@ public sealed class LaneNoteTracker
     private readonly double _vanishingY;
     private readonly double _spawnGateY;
     private readonly double _commitWindowSeconds;
-    private readonly double _stitchWindowSeconds;
-    private readonly double _stitchToleranceY;
 
     public LaneNoteTracker(
         double judgmentY,
@@ -84,9 +81,7 @@ public sealed class LaneNoteTracker
         double maxResidual = 0.012,
         double vanishingY = double.NaN,
         double spawnGateY = double.NaN,
-        double commitWindowSeconds = 0,
-        double stitchWindowSeconds = 0.45,
-        double stitchToleranceY = 0.09)
+        double commitWindowSeconds = 0)
     {
         _judgmentY = judgmentY;
         _matchToleranceY = matchToleranceY;
@@ -96,8 +91,6 @@ public sealed class LaneNoteTracker
         _vanishingY = vanishingY;
         _spawnGateY = spawnGateY;
         _commitWindowSeconds = commitWindowSeconds;
-        _stitchWindowSeconds = stitchWindowSeconds;
-        _stitchToleranceY = stitchToleranceY;
     }
 
     public int ActiveTrackCount => _tracks.Count;
@@ -112,6 +105,9 @@ public sealed class LaneNoteTracker
         return drained;
     }
 
+    /// <summary>このエンジンは二重予約の抑制を行わない（v0.3.11 の挙動そのまま）。</summary>
+    public List<SuppressedDuplicate> DrainSuppressed() => new();
+
     /// <summary>
     /// このレーンの検出列を時刻 timeSeconds のフレームとして取り込む。
     /// 戻り値は「今回新たにスケジュールすべきヒット」（種別・方向・到達時刻＋診断情報）。
@@ -121,9 +117,6 @@ public sealed class LaneNoteTracker
     {
         var ready = new List<ScheduledNote>();
         var matched = new HashSet<Track>();
-
-        // 縫合の猶予を過ぎた死骸は捨てる（古い軌跡への誤った繋ぎ直しを防ぐ）。
-        _corpses.RemoveAll(c => timeSeconds - c.DeathTime > _stitchWindowSeconds);
 
         // 対応付けは「前回位置との近さ」ではなく、各軌跡の速度から予測した
         // 今回位置との近さで行い、候補ペア全体を近い順に貪欲に割り当てる。
@@ -161,34 +154,21 @@ public sealed class LaneNoteTracker
             usedDets.Add(det);
             matched.Add(track);
         }
-        var assignedTracks = new HashSet<Track>(assignment.Values);
-
         foreach (NoteDetection det in detList)
         {
             Track? best = assignment.GetValueOrDefault(det);
 
             if (best is null)
             {
-                // 軌跡の縫合（v0.3.13）: 対応付けから漏れた検出をいきなり新規の
-                // 軌跡にせず、まず「同じノーツの続き」がないか探す。同時ノーツの
-                // 重なりやレーン発光で検出が途切れると軌跡が分断し、後半の断片は
-                // 標本不足・残差過大・方向未確定で予約できないまま死ぬ（v0.3.11 の
-                // 実機ログでは、未予約で死んだ軌跡の約半数に、同レーン・同種の
-                // 後継が 0.2 秒以内に生まれていた）。位置の連続性が合う場合だけ
-                // 旧軌跡に繋ぎ直し、標本と方向票を引き継ぐ。
-                best = TryReattach(det, timeSeconds, matched, assignedTracks);
-                if (best is null)
+                best = new Track
                 {
-                    best = new Track
-                    {
-                        Kind = det.Kind,
-                        LastSeenTime = timeSeconds,
-                        LastY = det.Y,
-                        FirstY = det.Y,
-                        FirstTime = timeSeconds,
-                    };
-                    _tracks.Add(best);
-                }
+                    Kind = det.Kind,
+                    LastSeenTime = timeSeconds,
+                    LastY = det.Y,
+                    FirstY = det.Y,
+                    FirstTime = timeSeconds,
+                };
+                _tracks.Add(best);
             }
 
             best.Samples.Add((timeSeconds, det.Y));
@@ -225,8 +205,10 @@ public sealed class LaneNoteTracker
                 // 検出が止まりやすく、v0.3.10 で予約が 51 件減った）。消滅の瞬間に
                 // 限り、確定窓を無視して最後の予測で予約する。
                 // （v0.3.12 で入れた「毎フレーム試行」と「過去方向の猶予 0.12 秒」は
-                // 実機で小幅な悪化だったため v0.3.13 で取り下げ、v0.3.11 の挙動に
-                // 戻した。悪化の内訳は Fly Again CRINGE 41→54、IGNITED 55→84。）
+                // 実機で小幅な悪化だったため取り下げ、v0.3.11 の挙動に戻した。
+                // 悪化の内訳は Fly Again CRINGE 41→54、IGNITED 55→84。
+                // v0.3.13 の軌跡縫合も A/B で不採用（Floating 136→149、
+                // IGNITED 55→74）となり、v0.3.14 で取り下げた。）
                 if (!t.Scheduled && t.Samples.Count >= 3
                     && TryBuildSchedule(t, timeSeconds, bypassCommit: true) is { } lastChance)
                 {
@@ -236,24 +218,6 @@ public sealed class LaneNoteTracker
                 _expired.Add(new ExpiredTrack(
                     t.Kind, t.Scheduled, t.TotalSamples,
                     t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual));
-                // 縫合用の死骸として残す（v0.3.13）: タイムアウトで死んだ未予約の
-                // 軌跡のうち、本物のノーツらしいもの（標本 3 件以上・実際に落下・
-                // 出現ゲート内・判定ラインをまだ越えていない）だけを、短時間
-                // 保持する。判定ラインを越えて消えた軌跡は対象外（後続の検出は
-                // 別の何かであり、繋ぐと二重発火の原因になる）。
-                if (!t.Scheduled
-                    && timeSeconds - t.LastSeenTime > _trackTimeoutSeconds
-                    && t.LastY <= _judgmentY + 0.08
-                    && t.TotalSamples >= 3
-                    && t.LastY - t.FirstY >= 0.03
-                    && (double.IsNaN(_spawnGateY) || t.FirstY <= _spawnGateY))
-                {
-                    _corpses.Add((t, timeSeconds));
-                    if (_corpses.Count > 8)
-                    {
-                        _corpses.RemoveAt(0);
-                    }
-                }
             }
         }
         _tracks.RemoveAll(t =>
@@ -295,72 +259,6 @@ public sealed class LaneNoteTracker
             }
         }
         return expectedY;
-    }
-
-    /// <summary>
-    /// 縫合（v0.3.13）: 対応付けから漏れた検出について、同種で今フレーム
-    /// 未対応の生存軌跡、または保持中の死骸の中から、射影外挿の位置が
-    /// 連続するものを探して繋ぎ直す。通常の対応付けより窓を広げるが、
-    /// 「外挿位置からのずれが小さい」「最後の検出位置より上に戻らない」
-    /// 「判定ラインを越えていない」の 3 条件で、別ノーツへの誤接続を抑える。
-    /// 繋ぎ直した軌跡（死骸の場合は生存側へ戻したもの）を返す。なければ null。
-    /// </summary>
-    private Track? TryReattach(
-        NoteDetection det, double timeSeconds, HashSet<Track> matched, HashSet<Track> assignedTracks)
-    {
-        if (_stitchWindowSeconds <= 0 || det.Y > _judgmentY)
-        {
-            return null;
-        }
-        Track? best = null;
-        double bestAbsGap = double.PositiveInfinity;
-        bool bestIsCorpse = false;
-
-        void Consider(Track candidate, bool isCorpse)
-        {
-            if (candidate.Kind != det.Kind || candidate.Scheduled)
-            {
-                return;
-            }
-            double expectedY = ExtrapolateY(candidate, timeSeconds);
-            double gap = det.Y - expectedY;
-            if (gap < -0.06 || gap > _stitchToleranceY)
-            {
-                return;
-            }
-            if (det.Y < candidate.LastY - 0.02)
-            {
-                return;
-            }
-            if (Math.Abs(gap) < bestAbsGap)
-            {
-                bestAbsGap = Math.Abs(gap);
-                best = candidate;
-                bestIsCorpse = isCorpse;
-            }
-        }
-
-        foreach (Track t in _tracks)
-        {
-            // 今フレームで既に対応づいた軌跡と、別の検出に割り当て済みの軌跡は
-            // 対象外（割り当て済みを奪うと、1 本の軌跡に同時刻の標本が 2 つ
-            // 入って予測が壊れる）。
-            if (!matched.Contains(t) && !assignedTracks.Contains(t))
-            {
-                Consider(t, isCorpse: false);
-            }
-        }
-        foreach ((Track corpse, double _) in _corpses)
-        {
-            Consider(corpse, isCorpse: true);
-        }
-
-        if (best is not null && bestIsCorpse)
-        {
-            _corpses.RemoveAll(c => ReferenceEquals(c.Track, best));
-            _tracks.Add(best);
-        }
-        return best;
     }
 
     /// <summary>
