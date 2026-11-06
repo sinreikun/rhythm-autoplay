@@ -96,8 +96,14 @@ public sealed class FrameDetector
             {
                 return; // 横長ノーツの一部。矢印パスに任せる。
             }
+            // 追跡に使う Y は塊の中心ではなく下端（先端）にする。厚みのある
+            // バーの画面中心は射影の運動法則から系統的にずれるため、高速譜面
+            // では到達予測の残差が閾値を超えて予約が全滅した（v0.3.7 実測:
+            // 遅い序盤・終盤だけ予約され、矢印＝下線という点特徴は全編通った）。
+            // 先端は点特徴として法則に従う。
+            double bottomY = runLast / (double)h;
             results.Add(new NoteDetection(
-                lane, ToKind(runColor), null, centerX, centerY, frame.TimeSeconds));
+                lane, ToKind(runColor), null, centerX, bottomY, frame.TimeSeconds));
         }
 
         for (int py = pyTop; py <= pyJudge; py += 2)
