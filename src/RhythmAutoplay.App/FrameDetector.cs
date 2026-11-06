@@ -130,7 +130,7 @@ public sealed class FrameDetector
         int w = frame.Width, h = frame.Height;
 
         var candidateRows = new List<(int Py, int X0, int X1)>();
-        int scanFrom = pyTop + (int)((pyJudge - pyTop) * 0.3);
+        int scanFrom = pyTop + (int)((pyJudge - pyTop) * 0.08);
         for (int py = scanFrom; py <= pyJudge; py += 4)
         {
             double y = py / (double)h;
@@ -156,8 +156,10 @@ public sealed class FrameDetector
                 }
                 else
                 {
+                    // 白シェブロン（《《《）は字形ごとに暗い隙間が空くため、
+                    // 隙間 30px までは同じ連なりとして扱う（v0.3.1）。
                     curGap += 2;
-                    if (curGap > 4)
+                    if (curGap > 30)
                     {
                         curStart = -1;
                         curGap = 0;
@@ -166,7 +168,7 @@ public sealed class FrameDetector
             }
 
             double laneWidthPx = geo.LaneWidthAt(_profile.LaneCount, y) * w;
-            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.9)
+            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5)
             {
                 candidateRows.Add((py, bestStart, bestEnd));
             }
@@ -264,9 +266,11 @@ public sealed class FrameDetector
         {
             return true;
         }
-        // 矢印は白〜淡色で描かれることがある。明るい低彩度も印として拾う。
+        // 矢印は白〜淡色で描かれる。HYPNOSYNC の白シェブロンは実測で純白
+        // (255,255,255)〜灰色 (v≈0.49, s=0)。レーン面 (v≈0.16) と区別できる
+        // v>0.45 の低彩度を印として拾う。
         var (_, s, v) = ColorClassifier.RgbToHsv(r, g, b);
-        return v > 0.8 && s < 0.35;
+        return v > 0.45 && s < 0.35;
     }
 
     private static NoteKind ToKind(PixelColor color) => color switch
