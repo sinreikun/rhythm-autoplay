@@ -26,11 +26,13 @@ NativeConsole.AttachConsole(-1);
 if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase))
 {
     bool dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
+    // --log-samples は値を持たないフラグ。末尾に置かれても拾えるよう Contains で見る
+    // （値つき引数のループは末尾要素を見ないため、v0.3.39 では末尾指定が無効だった）。
+    bool logSamplesFlag = args.Contains("--log-samples", StringComparer.OrdinalIgnoreCase);
     double offsetMs = 0;
     double strayMs = 0;
     double commitMs = 100;
     double holdMs = 0;
-    bool logSamples = false;
     int seconds = 0;
     string engine = "track";
     for (int i = 1; i < args.Length - 1; i++)
@@ -51,10 +53,6 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
         {
             holdMs = hv;
         }
-        if (args[i] == "--log-samples")
-        {
-            logSamples = true;
-        }
         if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
         {
             seconds = s;
@@ -66,7 +64,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     }
     var playSession = new PlaySession(
         GameProfile.HypnosyncDefault(),
-        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamples, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
     return playSession.Run();
 }
 
