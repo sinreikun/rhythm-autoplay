@@ -24,19 +24,22 @@ public sealed class LaneNoteTracker
     private readonly double _trackTimeoutSeconds;
     private readonly double _scheduleHorizonSeconds;
     private readonly double _maxResidual;
+    private readonly double _vanishingY;
 
     public LaneNoteTracker(
         double judgmentY,
         double matchToleranceY = 0.06,
         double trackTimeoutSeconds = 0.25,
         double scheduleHorizonSeconds = 2.0,
-        double maxResidual = 0.012)
+        double maxResidual = 0.012,
+        double vanishingY = double.NaN)
     {
         _judgmentY = judgmentY;
         _matchToleranceY = matchToleranceY;
         _trackTimeoutSeconds = trackTimeoutSeconds;
         _scheduleHorizonSeconds = scheduleHorizonSeconds;
         _maxResidual = maxResidual;
+        _vanishingY = vanishingY;
     }
 
     public int ActiveTrackCount => _tracks.Count;
@@ -87,6 +90,10 @@ public sealed class LaneNoteTracker
             }
 
             best.Samples.Add((timeSeconds, det.Y));
+            if (best.Samples.Count > 12)
+            {
+                best.Samples.RemoveAt(0); // 直近の標本だけを使う（出現直後の不安定な検出に引っ張られない）
+            }
             best.LastY = det.Y;
             best.LastSeenTime = timeSeconds;
             if (det.Direction is not null)
@@ -97,7 +104,13 @@ public sealed class LaneNoteTracker
 
             if (!best.Scheduled && best.Samples.Count >= 3)
             {
-                if (HitTimePredictor.TryPredictHitTime(best.Samples, _judgmentY, out double hitTime, out double residual)
+                // 透視レーンでは消失点つきの射影予測を使う（等速接近が直線になる座標系）。
+                // vanishingY 未指定（NaN）のプロファイルでは通常の直線予測に倒す。
+                double hitTime, residual;
+                bool predicted = double.IsNaN(_vanishingY)
+                    ? HitTimePredictor.TryPredictHitTime(best.Samples, _judgmentY, out hitTime, out residual)
+                    : HitTimePredictor.TryPredictHitTimeProjective(best.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
+                if (predicted
                     && residual <= _maxResidual
                     && hitTime >= timeSeconds - 0.02
                     && hitTime <= timeSeconds + _scheduleHorizonSeconds)
