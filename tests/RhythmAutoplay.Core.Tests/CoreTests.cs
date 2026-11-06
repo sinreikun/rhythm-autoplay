@@ -70,7 +70,7 @@ public class KeyPlanBuilderTests
     {
         var plan = KeyPlanBuilder.BuildTap(Profile, Note(NoteKind.Red), 1.0);
         Assert.Equal(2, plan.Count);
-        Assert.Equal("D", plan[0].Key);
+        Assert.Equal("F", plan[0].Key);
         Assert.True(plan[0].IsDown);
         Assert.False(plan[1].IsDown);
     }
@@ -80,7 +80,7 @@ public class KeyPlanBuilderTests
     {
         var plan = KeyPlanBuilder.BuildTap(Profile, Note(NoteKind.Purple, lane: 2), 1.0);
         var downs = plan.Where(p => p.IsDown).Select(p => p.Key).ToList();
-        Assert.Equal(new[] { "J", "U" }, downs);
+        Assert.Equal(new[] { "H", "Y" }, downs);
         Assert.All(plan.Where(p => p.IsDown), p => Assert.Equal(1.0, p.TimeSeconds));
     }
 
@@ -88,7 +88,7 @@ public class KeyPlanBuilderTests
     public void Arrow_UsesDirectionKey()
     {
         var plan = KeyPlanBuilder.BuildTap(Profile, Note(NoteKind.Arrow, dir: ArrowDirection.Left), 1.0);
-        Assert.Equal("S", plan[0].Key);
+        Assert.Equal("A", plan[0].Key);
     }
 
     [Fact]
