@@ -149,7 +149,11 @@ public sealed class PlaySession
         // （バッチ内直列は否定済み: 同時発火グループ内の位置で平均は
         // 変わらない）。OS のイベント待ちからの復帰遅れが疑わしいため、
         // スピン区間を最後の 12ms まで広げ、イベント待ちは due の
-        // 10ms 手前で切り上げる。
+        // 10ms 手前で切り上げた。schedErr は平均 +0.9ms まで潰れたが、
+        // Floating の CRINGE が 2 ランとも悪化した (130/125 → 154/147)。
+        // 長いスピンが密度の高い場面でキャプチャ側を圧迫したと見て、
+        // v0.3.21 でスピン区間を 3ms に戻す。発火遅れの数値ではなく
+        // 判定結果で選ぶ。
         var schedGate = new object();
         var logGate = new object();
         var fireWake = new ManualResetEventSlim(false);
@@ -236,13 +240,11 @@ public sealed class PlaySession
                     {
                         FlushLogBuffer(logBuffer);
                     }
-                    if (realWaitMs > 12.0)
+                    if (realWaitMs > 3.0)
                     {
                         // 新しい予約が入ったらメインスレッドが起こす。
                         // 寝過ごしても次のループでキューを見直す。
-                        // due の 10ms 手前で切り上げ、残りはスピンで詰める
-                        // （OS 待ちの復帰遅れを発火時刻に触れさせない）。
-                        fireWake.Wait((int)(realWaitMs - 10.0));
+                        fireWake.Wait((int)(realWaitMs - 2.0));
                         fireWake.Reset();
                     }
                     else if (realWaitMs > 0.0)
