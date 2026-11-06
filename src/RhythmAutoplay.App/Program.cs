@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using RhythmAutoplay.Core;
+using ArrowDirection = RhythmAutoplay.Core.ArrowDirection;
 using RhythmAutoplay.App;
 
 // RhythmAutoplay 本体
