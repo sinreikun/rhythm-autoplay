@@ -105,6 +105,37 @@ public sealed class PlaySession
         long frames = 0;
         int scheduled = 0, fired = 0;
         double startedAt = capturer.Now;
+        var keysDown = new HashSet<string>();
+
+        // 期限の来た入力を先に発火してからキャプチャ・検出に入る
+        // （検出処理のぶん発火が遅れるのを避ける）。
+        void FireDue()
+        {
+            foreach (ScheduledInput due in scheduler.CollectDue(capturer.Now))
+            {
+                if (_options.DryRun)
+                {
+                    continue;
+                }
+                if (due.IsDown)
+                {
+                    // 同キーの連打: 前の押下がまだ保持中なら、先に離してから
+                    // 押し直す。離さずに down を重ねるとゲーム側で新しい
+                    // 押下として数えられず、連続ノーツを取りこぼす。
+                    if (keysDown.Contains(due.Key))
+                    {
+                        InputSender.Send(due.Key, false);
+                    }
+                    InputSender.Send(due.Key, true);
+                    keysDown.Add(due.Key);
+                    fired++;
+                }
+                else if (keysDown.Remove(due.Key))
+                {
+                    InputSender.Send(due.Key, false);
+                }
+            }
+        }
 
         while (!_cancelled)
         {
@@ -116,6 +147,8 @@ public sealed class PlaySession
             {
                 break;
             }
+
+            FireDue();
 
             CapturedFrame frame;
             try
@@ -148,18 +181,7 @@ public sealed class PlaySession
                 }
             }
 
-            foreach (ScheduledInput due in scheduler.CollectDue(capturer.Now))
-            {
-                if (_options.DryRun)
-                {
-                    continue;
-                }
-                InputSender.Send(due.Key, due.IsDown);
-                if (due.IsDown)
-                {
-                    fired++;
-                }
-            }
+            FireDue();
 
             Stats.Frames = frames;
             Stats.Scheduled = scheduled;
