@@ -1,5 +1,26 @@
 namespace RhythmAutoplay.Core;
 
+/// <summary>予約が確定したノーツと、その時点の診断情報（残差・標本数・出現位置/時刻）。</summary>
+public readonly record struct ScheduledNote(
+    NoteKind Kind,
+    ArrowDirection? Direction,
+    double THit,
+    double Residual,
+    int SampleCount,
+    double FirstY,
+    double FirstTime);
+
+/// <summary>消滅した軌跡の診断情報。予約されずに死んだ軌跡が「取りこぼし」の内訳になる。</summary>
+public readonly record struct ExpiredTrack(
+    NoteKind Kind,
+    bool Scheduled,
+    int TotalSamples,
+    double FirstY,
+    double LastY,
+    double FirstTime,
+    double LastSeenTime,
+    double BestResidual);
+
 /// <summary>
 /// 1レーン分のノーツ追跡。フレームごとの検出（中心 Y の列）を同一ノーツの
 /// 軌跡に結びつけ、標本が溜まったら到達時刻を予測して一度だけ発火候補を返す。
@@ -16,6 +37,9 @@ public sealed class LaneNoteTracker
         public double LastSeenTime { get; set; }
         public double LastY { get; set; }
         public double FirstY { get; set; }
+        public double FirstTime { get; set; }
+        public int TotalSamples { get; set; }
+        public double BestResidual { get; set; } = double.PositiveInfinity;
 
         /// <summary>矢印の方向はフレームごとに推定が揺れる（模様が流れるアニメーション）ため、票を貯めて多数決で決める。</summary>
         public Dictionary<ArrowDirection, int> DirectionVotes { get; } = new();
@@ -68,14 +92,24 @@ public sealed class LaneNoteTracker
 
     public int ActiveTrackCount => _tracks.Count;
 
+    private readonly List<ExpiredTrack> _expired = new();
+
+    /// <summary>前回呼び出し以降に消滅した軌跡の診断情報を取り出す（取りこぼし解析用）。</summary>
+    public List<ExpiredTrack> DrainExpired()
+    {
+        var drained = new List<ExpiredTrack>(_expired);
+        _expired.Clear();
+        return drained;
+    }
+
     /// <summary>
     /// このレーンの検出列を時刻 timeSeconds のフレームとして取り込む。
-    /// 戻り値は「今回新たにスケジュールすべきヒット」（種別・方向・到達時刻）。
+    /// 戻り値は「今回新たにスケジュールすべきヒット」（種別・方向・到達時刻＋診断情報）。
     /// </summary>
-    public List<(NoteKind Kind, ArrowDirection? Direction, double THit)> Observe(
+    public List<ScheduledNote> Observe(
         double timeSeconds, IReadOnlyList<NoteDetection> laneDetections)
     {
-        var ready = new List<(NoteKind, ArrowDirection?, double)>();
+        var ready = new List<ScheduledNote>();
         var matched = new HashSet<Track>();
 
         // 対応付けは「前回位置との近さ」ではなく、各軌跡の速度から予測した
@@ -99,11 +133,28 @@ public sealed class LaneNoteTracker
                     (double t2, double y2) = track.Samples[^1];
                     if (t2 > t1)
                     {
-                        expectedY = y2 + (y2 - y1) / (t2 - t1) * (timeSeconds - t2);
+                        if (!double.IsNaN(_vanishingY)
+                            && y1 - _vanishingY > 1e-6
+                            && y2 - _vanishingY > 1e-6)
+                        {
+                            // 射影の運動法則で外挿する。直線外挿は加速するノーツを
+                            // 系統的に低く見積もり、高速域で対応付けが外れて軌跡が
+                            // 分断する（重複予約と予約遅れの主因候補、v0.3.9）。
+                            double w1 = 1.0 / (y1 - _vanishingY);
+                            double w2 = 1.0 / (y2 - _vanishingY);
+                            double wExpected = w2 + (w2 - w1) / (t2 - t1) * (timeSeconds - t2);
+                            expectedY = wExpected > 1e-6
+                                ? _vanishingY + 1.0 / wExpected
+                                : y2 + (y2 - y1) / (t2 - t1) * (timeSeconds - t2);
+                        }
+                        else
+                        {
+                            expectedY = y2 + (y2 - y1) / (t2 - t1) * (timeSeconds - t2);
+                        }
                     }
                 }
                 double gap = det.Y - expectedY;
-                if (gap < -_matchToleranceY / 2 || gap > _matchToleranceY * 0.75)
+                if (gap < -_matchToleranceY * 0.66 || gap > _matchToleranceY)
                 {
                     continue;
                 }
@@ -136,11 +187,13 @@ public sealed class LaneNoteTracker
                     LastSeenTime = timeSeconds,
                     LastY = det.Y,
                     FirstY = det.Y,
+                    FirstTime = timeSeconds,
                 };
                 _tracks.Add(best);
             }
 
             best.Samples.Add((timeSeconds, det.Y));
+            best.TotalSamples++;
             if (best.Samples.Count > 12)
             {
                 best.Samples.RemoveAt(0); // 直近の標本だけを使う（出現直後の不安定な検出に引っ張られない）
@@ -161,6 +214,10 @@ public sealed class LaneNoteTracker
                 bool predicted = double.IsNaN(_vanishingY)
                     ? HitTimePredictor.TryPredictHitTime(best.Samples, _judgmentY, out hitTime, out residual)
                     : HitTimePredictor.TryPredictHitTimeProjective(best.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
+                if (predicted && residual < best.BestResidual)
+                {
+                    best.BestResidual = residual;
+                }
                 // 出現ゲート: 本物のノーツはレーン上端から現れて落下する。
                 // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
                 // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
@@ -185,11 +242,23 @@ public sealed class LaneNoteTracker
                     && hitTime <= timeSeconds + _scheduleHorizonSeconds)
                 {
                     best.Scheduled = true;
-                    ready.Add((best.Kind, modal, hitTime));
+                    ready.Add(new ScheduledNote(
+                        best.Kind, modal, hitTime, residual,
+                        best.TotalSamples, best.FirstY, best.FirstTime));
                 }
             }
         }
 
+        foreach (Track t in _tracks)
+        {
+            if (timeSeconds - t.LastSeenTime > _trackTimeoutSeconds
+                || t.LastY > _judgmentY + 0.08)
+            {
+                _expired.Add(new ExpiredTrack(
+                    t.Kind, t.Scheduled, t.TotalSamples,
+                    t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual));
+            }
+        }
         _tracks.RemoveAll(t =>
             timeSeconds - t.LastSeenTime > _trackTimeoutSeconds
             || t.LastY > _judgmentY + 0.08);

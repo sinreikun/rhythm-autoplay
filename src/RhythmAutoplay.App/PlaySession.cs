@@ -185,20 +185,25 @@ public sealed class PlaySession
             foreach (IGrouping<int, NoteDetection> group in detector.Detect(frame).GroupBy(d => d.Lane))
             {
                 var ready = trackers[group.Key].Observe(now, group.ToList());
-                foreach ((NoteKind kind, ArrowDirection? direction, double tHit) in ready)
+                foreach (ScheduledNote sn in ready)
                 {
-                    var note = new NoteDetection(group.Key, kind, direction, 0, _profile.JudgmentLineY, now);
-                    foreach (ScheduledInput ev in KeyPlanBuilder.BuildTap(_profile, note, tHit + offsetSeconds))
+                    var note = new NoteDetection(group.Key, sn.Kind, sn.Direction, 0, _profile.JudgmentLineY, now);
+                    foreach (ScheduledInput ev in KeyPlanBuilder.BuildTap(_profile, note, sn.THit + offsetSeconds))
                     {
                         scheduler.Enqueue(ev);
                     }
                     scheduled++;
                     eventLog?.WriteLine(
-                        $"S now={now:F3} lane={group.Key} kind={kind} dir={direction} tHit={tHit:F3}");
+                        $"S now={now:F3} lane={group.Key} kind={sn.Kind} dir={sn.Direction} tHit={sn.THit:F3} res={sn.Residual:F4} n={sn.SampleCount} fY={sn.FirstY:F3} ft={sn.FirstTime:F3}");
                     if (_options.DryRun)
                     {
-                        Log($"[dry] lane={group.Key + 1} {kind} dir={direction?.ToString() ?? "-"} t_hit まで {tHit - now:F3}s");
+                        Log($"[dry] lane={group.Key + 1} {sn.Kind} dir={sn.Direction?.ToString() ?? "-"} t_hit まで {sn.THit - now:F3}s");
                     }
+                }
+                foreach (ExpiredTrack ex in trackers[group.Key].DrainExpired())
+                {
+                    eventLog?.WriteLine(
+                        $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4}");
                 }
             }
 

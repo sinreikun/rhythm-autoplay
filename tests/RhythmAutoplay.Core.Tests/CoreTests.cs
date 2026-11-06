@@ -167,7 +167,7 @@ public class LaneNoteTrackerTests
             double t = i / 60.0;
             double y = 0.30 + 0.9 * t;
             var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
-            foreach (var (kind, _, tHit) in tracker.Observe(t, new[] { det }))
+            foreach (var (kind, _, tHit, _, _, _, _) in tracker.Observe(t, new[] { det }))
             {
                 scheduledCount++;
                 scheduledHit = tHit;
@@ -264,7 +264,7 @@ public class LaneNoteTrackerTests
                 _ => ArrowDirection.Left,
             };
             var det = new NoteDetection(0, NoteKind.Arrow, dir, 0.4, y, t);
-            foreach (var (_, direction, _) in tracker.Observe(t, new[] { det }))
+            foreach (var (_, direction, _, _, _, _, _) in tracker.Observe(t, new[] { det }))
             {
                 scheduledCount++;
                 scheduledDirection = direction;
@@ -377,7 +377,7 @@ public class ProjectivePredictorTests
             double t = i / 60.0;
             double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
             var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
-            foreach (var (_, _, tHit) in tracker.Observe(t, new[] { det }))
+            foreach (var (_, _, tHit, _, _, _, _) in tracker.Observe(t, new[] { det }))
             {
                 scheduled++;
                 hit = tHit;
@@ -385,5 +385,41 @@ public class ProjectivePredictorTests
         }
         Assert.Equal(1, scheduled);
         Assert.Equal(1.1301, hit, precision: 2);
+    }
+
+    [Fact]
+    public void Tracker_ProjectiveMatching_SurvivesFrameHole()
+    {
+        // 高速域でフレームが抜けても、射影外挿なら対応付けが外れず軌跡が
+        // 分断しない（直線外挿では予測が低く出て別軌跡になり、二重予約や
+        // 予約遅れの原因になっていた。v0.3.9 の実機診断に基づく対策）。
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, vanishingY: 0.12);
+        int scheduled = 0;
+        double hit = 0;
+        for (int i = 0; i <= 68; i++)
+        {
+            if (i >= 63 && i <= 67)
+            {
+                continue; // 判定直前の高速域で 5 フレーム抜け
+            }
+            double t = i / 60.0;
+            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            foreach (var sn in tracker.Observe(t, new[] { det }))
+            {
+                scheduled++;
+                hit = sn.THit;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
+        // ノーツ通過後に軌跡が診断つきで回収される
+        for (int i = 69; i <= 100; i++)
+        {
+            tracker.Observe(i / 60.0, Array.Empty<NoteDetection>());
+        }
+        var expired = tracker.DrainExpired();
+        Assert.Single(expired);
+        Assert.True(expired[0].Scheduled);
     }
 }
