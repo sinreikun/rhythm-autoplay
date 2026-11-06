@@ -106,19 +106,49 @@ public sealed class FrameDetector
                 lane, ToKind(runColor), null, centerX, bottomY, frame.TimeSeconds));
         }
 
-        for (int py = pyTop; py <= pyJudge; py += 2)
+        // 1 行の色を 3 列（中心と左右 ±30% レーン幅）から決める（v0.3.36）。
+        // 従来は中心線 1 列だけで、判定テキスト（BASED! 等は中央に重なる）が
+        // 同レーンの後続ノーツを数フレーム連続で覆うと、その間ノーツが
+        // 丸ごと見えなかった。横にずれた列ならテキストの外に出るため、
+        // どれか 1 列でも色が取れれば行はその色とする。現在の run と同じ
+        // 色を優先し、run の連続性を保つ。
+        PixelColor ClassifyRow(int py)
         {
             double y = py / (double)h;
             double cx = geo.LaneCenterX(lane, _profile.LaneCount, y);
-            int px = Clamp((int)(cx * w), 0, w - 1);
-            var (r, g, b) = frame.PixelAt(px, py);
-            PixelColor color = ColorClassifier.Classify(r, g, b);
+            double halfSpread = geo.LaneWidthAt(_profile.LaneCount, y) * w * 0.30;
             bool inBand = bands.Count > 0 && InBand(py);
-            if (color == PixelColor.None && inBand)
+            PixelColor found = PixelColor.None;
+            foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
             {
-                // 白帯の上に薄まったノーツ色は、色相だけの緩い分類で拾う。
-                color = ColorClassifier.ClassifyLoose(r, g, b);
+                int px = Clamp((int)(cx * w + off), 0, w - 1);
+                var (r, g, b) = frame.PixelAt(px, py);
+                PixelColor c = ColorClassifier.Classify(r, g, b);
+                if (c == PixelColor.None && inBand)
+                {
+                    // 白帯の上に薄まったノーツ色は、色相だけの緩い分類で拾う。
+                    c = ColorClassifier.ClassifyLoose(r, g, b);
+                }
+                if (c == PixelColor.None)
+                {
+                    continue;
+                }
+                if (c == runColor)
+                {
+                    return c;
+                }
+                if (found == PixelColor.None)
+                {
+                    found = c;
+                }
             }
+            return found;
+        }
+
+        for (int py = pyTop; py <= pyJudge; py += 2)
+        {
+            PixelColor color = ClassifyRow(py);
+            bool inBand = bands.Count > 0 && InBand(py);
 
             if (color != PixelColor.None && color == runColor)
             {
