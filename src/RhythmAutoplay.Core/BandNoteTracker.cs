@@ -9,6 +9,7 @@ public interface ILaneTracker
     List<ScheduledNote> Observe(double timeSeconds, IReadOnlyList<NoteDetection> laneDetections);
     List<ExpiredTrack> DrainExpired();
     List<SuppressedDuplicate> DrainSuppressed();
+    List<RevisedNote> DrainRevisions();
 }
 
 /// <summary>
@@ -101,6 +102,9 @@ public sealed class BandNoteTracker : ILaneTracker
         _suppressed.Clear();
         return drained;
     }
+
+    /// <summary>帯域方式は帯を抜けた時点で軌跡を手放すため、事後修正は行わない。</summary>
+    public List<RevisedNote> DrainRevisions() => new();
 
     public List<ScheduledNote> Observe(
         double timeSeconds, IReadOnlyList<NoteDetection> laneDetections)

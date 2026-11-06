@@ -10,6 +10,19 @@ public readonly record struct ScheduledNote(
     double FirstY,
     double FirstTime);
 
+/// <summary>
+/// 予約済み軌跡の到達時刻の事後修正（v0.3.37）。確定窓（ヒット 100ms 前）
+/// で固定した予測は、その後ライン際で得られる標本で締め直せる。修正は
+/// 「新しい適合が残差ゲートを通り、旧予測と 8ms 以上ずれる」場合だけ。
+/// </summary>
+public readonly record struct RevisedNote(
+    NoteKind Kind,
+    ArrowDirection? Direction,
+    double OldHit,
+    double NewHit,
+    double Residual,
+    int SampleCount);
+
 /// <summary>消滅した軌跡の診断情報。予約されずに死んだ軌跡が「取りこぼし」の内訳になる。</summary>
 public readonly record struct ExpiredTrack(
     NoteKind Kind,
@@ -37,6 +50,11 @@ public sealed class LaneNoteTracker : ILaneTracker
         public required NoteKind Kind;
         public List<(double Time, double Y)> Samples { get; } = new();
         public bool Scheduled { get; set; }
+
+        /// <summary>予約済みの到達時刻と、その時点の残差・標本数（事後修正の基準、v0.3.37）。</summary>
+        public double ScheduledHit { get; set; }
+        public double ScheduledResidual { get; set; }
+        public int ScheduledSamples { get; set; }
         public double LastSeenTime { get; set; }
         public double LastY { get; set; }
         public double FirstY { get; set; }
@@ -114,12 +132,21 @@ public sealed class LaneNoteTracker : ILaneTracker
     public int ActiveTrackCount => _tracks.Count;
 
     private readonly List<ExpiredTrack> _expired = new();
+    private readonly List<RevisedNote> _revisions = new();
 
     /// <summary>前回呼び出し以降に消滅した軌跡の診断情報を取り出す（取りこぼし解析用）。</summary>
     public List<ExpiredTrack> DrainExpired()
     {
         var drained = new List<ExpiredTrack>(_expired);
         _expired.Clear();
+        return drained;
+    }
+
+    /// <summary>前回呼び出し以降に発生した予約の事後修正を取り出す（v0.3.37）。</summary>
+    public List<RevisedNote> DrainRevisions()
+    {
+        var drained = new List<RevisedNote>(_revisions);
+        _revisions.Clear();
         return drained;
     }
 
@@ -208,8 +235,15 @@ public sealed class LaneNoteTracker : ILaneTracker
                 if (TryBuildSchedule(best, timeSeconds, bypassCommit: false) is { } note)
                 {
                     best.Scheduled = true;
+                    best.ScheduledHit = note.THit;
+                    best.ScheduledResidual = note.Residual;
+                    best.ScheduledSamples = note.SampleCount;
                     ready.Add(note);
                 }
+            }
+            else if (best.Scheduled)
+            {
+                TryRevise(best, timeSeconds);
             }
         }
 
@@ -234,6 +268,9 @@ public sealed class LaneNoteTracker : ILaneTracker
                 && TryBuildSchedule(t, timeSeconds, bypassCommit: false) is { } starved)
             {
                 t.Scheduled = true;
+                t.ScheduledHit = starved.THit;
+                t.ScheduledResidual = starved.Residual;
+                t.ScheduledSamples = starved.SampleCount;
                 ready.Add(starved);
             }
         }
@@ -256,6 +293,9 @@ public sealed class LaneNoteTracker : ILaneTracker
                     && TryBuildSchedule(t, timeSeconds, bypassCommit: true) is { } lastChance)
                 {
                     t.Scheduled = true;
+                    t.ScheduledHit = lastChance.THit;
+                    t.ScheduledResidual = lastChance.Residual;
+                    t.ScheduledSamples = lastChance.SampleCount;
                     ready.Add(lastChance);
                 }
                 _expired.Add(new ExpiredTrack(
@@ -304,6 +344,51 @@ public sealed class LaneNoteTracker : ILaneTracker
             }
         }
         return expectedY;
+    }
+
+    /// <summary>
+    /// 予約済み軌跡の事後修正（v0.3.37）: 確定はヒット 100ms 前に予測を
+    /// 固定するが、その後も軌跡は標本を増やし、射影フィットのてこは
+    /// ライン際ほど強く効くため、予測は締め直せる。新しい適合が残差
+    /// ゲート（_maxResidual）を通り、確定時より標本が 3 つ以上増え、
+    /// 旧予測と 8ms 以上ずれる場合にだけ修正する。確定時の残差以下は
+    /// 要求しない: 初期の適合は標本が少なく偶然残差が小さい（過適合）
+    /// ことがあり、その「完璧だが間違った」予測こそ締め直し対象。
+    /// 発火まで 25ms を切ったらもう動かさない（発火スレッドが既に
+    /// 起き上がっている）。
+    /// </summary>
+    private void TryRevise(Track track, double timeSeconds)
+    {
+        if (track.Samples.Count < 4 || track.TotalSamples < track.ScheduledSamples + 3)
+        {
+            return;
+        }
+        if (track.ScheduledHit - timeSeconds < 0.025)
+        {
+            return;
+        }
+        double hitTime, residual;
+        bool predicted = double.IsNaN(_vanishingY)
+            ? HitTimePredictor.TryPredictHitTime(track.Samples, _judgmentY, out hitTime, out residual)
+            : HitTimePredictor.TryPredictHitTimeProjective(track.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
+        if (!predicted || residual > _maxResidual)
+        {
+            return;
+        }
+        if (hitTime < timeSeconds - 0.02 || hitTime > timeSeconds + _scheduleHorizonSeconds)
+        {
+            return;
+        }
+        if (Math.Abs(hitTime - track.ScheduledHit) < 0.008)
+        {
+            return;
+        }
+        _revisions.Add(new RevisedNote(
+            track.Kind, track.ModalDirection, track.ScheduledHit, hitTime,
+            residual, track.TotalSamples));
+        track.ScheduledHit = hitTime;
+        track.ScheduledResidual = residual;
+        track.ScheduledSamples = track.TotalSamples;
     }
 
     /// <summary>

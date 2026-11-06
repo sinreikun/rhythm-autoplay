@@ -302,6 +302,11 @@ public sealed class PlaySession
         // 適用する。実在する同キー連続ノーツは音楽的に 35ms 未満では
         // 並ばない前提。
         var recentSchedules = new List<(string Signature, double THit, double At)>();
+        // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
+        // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
+        // (レーン, 署名, 現在の到達時刻) → タグ。修正のたびに時刻を更新する。
+        long scheduleTag = 0;
+        var liveSchedules = new List<(int Lane, string Signature, double THit, long Tag)>();
 
         while (!_cancelled)
         {
@@ -350,7 +355,9 @@ public sealed class PlaySession
                         continue;
                     }
                     recentSchedules.Add((signature, sn.THit, now));
-                    var enqueued = new List<ScheduledInput>(events);
+                    long tag = ++scheduleTag;
+                    liveSchedules.Add((group.Key, signature, sn.THit, tag));
+                    var enqueued = events.Select(e => e with { Tag = tag }).ToList();
                     if (_options.InjectStrayMilliseconds > 0 && sn.Kind != NoteKind.Arrow)
                     {
                         // 診断: 本発火の少し前に隣レーンの誤キーを落とす。
@@ -380,6 +387,36 @@ public sealed class PlaySession
                 {
                     LogEvent(
                         $"D lane={group.Key} kind={sd.Kind} tHit={sd.THit:F3}");
+                }
+                liveSchedules.RemoveAll(e => now > e.THit + 0.5);
+                foreach (RevisedNote rv in trackers[group.Key].DrainRevisions())
+                {
+                    int idx = liveSchedules.FindIndex(
+                        e => e.Lane == group.Key && Math.Abs(e.THit - rv.OldHit) < 1e-9);
+                    if (idx < 0)
+                    {
+                        continue;
+                    }
+                    var entry = liveSchedules[idx];
+                    bool shifted;
+                    lock (schedGate)
+                    {
+                        shifted = scheduler.ShiftPending(entry.Tag, rv.NewHit - rv.OldHit);
+                    }
+                    if (!shifted)
+                    {
+                        continue; // 発火済み。もう動かせない。
+                    }
+                    liveSchedules[idx] = (entry.Lane, entry.Signature, rv.NewHit, entry.Tag);
+                    int ridx = recentSchedules.FindIndex(
+                        r => r.Signature == entry.Signature && Math.Abs(r.THit - rv.OldHit) < 1e-9);
+                    if (ridx >= 0)
+                    {
+                        recentSchedules[ridx] = (entry.Signature, rv.NewHit, recentSchedules[ridx].At);
+                    }
+                    fireWake.Set();
+                    LogEvent(
+                        $"R now={now:F3} lane={group.Key} kind={rv.Kind} from={rv.OldHit:F3} to={rv.NewHit:F3} res={rv.Residual:F4} n={rv.SampleCount}");
                 }
                 foreach (ExpiredTrack ex in trackers[group.Key].DrainExpired())
                 {

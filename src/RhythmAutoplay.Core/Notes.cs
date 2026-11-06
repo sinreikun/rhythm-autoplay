@@ -34,7 +34,12 @@ public sealed record NoteDetection(
     double TimeSeconds);
 
 /// <summary>スケジューラへ渡す入力イベント（キー down/up の列）。</summary>
+/// <param name="Tag">
+/// 予約の事後修正（v0.3.37）で同一予約のイベントを束ねる識別子。
+/// 0 は無タグ（修正対象外）。発火済みでないイベントだけが時刻をずらせる。
+/// </param>
 public sealed record ScheduledInput(
     double TimeSeconds,
     string Key,
-    bool IsDown);
+    bool IsDown,
+    long Tag = 0);

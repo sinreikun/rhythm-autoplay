@@ -56,6 +56,28 @@ public class InputSchedulerTests
         Assert.Equal(1, scheduler.Count);
         Assert.Equal(2.0, scheduler.NextTimeSeconds);
     }
+
+    [Fact]
+    public void ShiftPending_MovesOnlyTaggedEvents()
+    {
+        // 予約の事後修正（v0.3.37）: タグ付きの down/up だけが一緒に動き、
+        // 他の予約には触れない。down が発火済みなら修正はできない。
+        var scheduler = new InputScheduler();
+        scheduler.Enqueue(new ScheduledInput(1.00, "F", true, Tag: 7));
+        scheduler.Enqueue(new ScheduledInput(1.04, "F", false, Tag: 7));
+        scheduler.Enqueue(new ScheduledInput(1.02, "G", true, Tag: 8));
+
+        Assert.True(scheduler.ShiftPending(7, 0.02));
+        Assert.False(scheduler.ShiftPending(99, 0.02));
+
+        var due = scheduler.CollectDue(1.03);
+        Assert.Equal(2, due.Count); // G(1.02) と、ずれた F down(1.02)
+        Assert.Contains(due, e => e.Key == "F" && e.IsDown && Math.Abs(e.TimeSeconds - 1.02) < 1e-9);
+        Assert.False(scheduler.ShiftPending(7, 0.01)); // down はもう無い
+        var rest = scheduler.CollectDue(2.0);
+        Assert.Single(rest);
+        Assert.Equal(1.06, rest[0].TimeSeconds, precision: 9); // F up も一緒にずれている
+    }
 }
 
 public class KeyPlanBuilderTests
@@ -209,6 +231,37 @@ public class LaneNoteTrackerTests
         Assert.Equal(0.7111, scheduledHit, precision: 2);
         // 到達前に予約が確定していること（死に際の遅すぎる発火ではない）。
         Assert.True(scheduledAt < scheduledHit);
+    }
+
+    [Fact]
+    public void Tracker_Revision_RefinesCommittedHit()
+    {
+        // 予約の事後修正（v0.3.37）: 確定後に速度がわずかに変わると、
+        // 確定時の予測は古い法則のまま外れる。ライン際の標本で締め直した
+        // 予測が 8ms 以上ずれるなら、修正イベントが出て発火時刻が
+        // 本当の到達時刻に近づくこと。
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, commitWindowSeconds: 0.10);
+        double committedHit = double.NaN;
+        var revisions = new List<RevisedNote>();
+        // t=0.55 (y=0.795) までは 0.9/s、それ以降は 1.05/s。
+        // 本当の到達は 0.55 + 0.145/1.05 = 0.6881。旧法則の予測は 0.7111。
+        static double Y(double t) => t <= 0.55 ? 0.30 + 0.9 * t : 0.795 + 1.05 * (t - 0.55);
+        for (int i = 0; i <= 45; i++)
+        {
+            double t = i / 60.0;
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, Y(t), t);
+            foreach (var note in tracker.Observe(t, new[] { det }))
+            {
+                committedHit = note.THit;
+            }
+            revisions.AddRange(tracker.DrainRevisions());
+        }
+        Assert.False(double.IsNaN(committedHit));
+        Assert.NotEmpty(revisions);
+        double finalHit = revisions[^1].NewHit;
+        Assert.True(
+            Math.Abs(finalHit - 0.6881) < Math.Abs(committedHit - 0.6881) - 0.004,
+            $"committed={committedHit:F4} final={finalHit:F4} true=0.6881");
     }
 
     [Fact]
