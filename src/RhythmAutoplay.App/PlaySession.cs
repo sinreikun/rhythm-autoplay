@@ -75,18 +75,20 @@ public sealed class PlaySession
         using var capturer = new WindowCapturer(hwnd);
         var detector = new FrameDetector(_profile);
         var trackers = new LaneNoteTracker[_profile.LaneCount];
-        // 出現ゲート: レーン上端から45%より下で初めて見えた塊は UI（判定文字・
-        // コンボ数字）とみなし発火しない。HYPNOSYNC の判定文字 BASED! は
-        // Y≈0.72〜0.90 の範囲に出る（2026-11-06 スナップショット実測で
-        // 0.765 付近の出現を確認）。本物のノーツは 0.61 以下で初検出される。
+        // 出現ゲートは判定ライン際の静止物（BREAK バー等）だけを弾く緩い
+        // 境界に留める。UI と本物の見分けは追跡器側の「動きの確認」が担う:
+        // 高速譜面（TRANCE）では本物のノーツの初検出が Y≈0.78〜0.80 まで
+        // 下がり、位置ゲートを厳しくすると実ノーツを丸ごと落とす
+        // （v0.3.5/0.3.6 の実測: レーンノーツの予約がほぼ全滅した）。
         double spawnGateY = _profile.Geometry.TopY
-            + 0.45 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
+            + 0.84 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
         for (int lane = 0; lane < trackers.Length; lane++)
         {
             trackers[lane] = new LaneNoteTracker(
                 _profile.JudgmentLineY,
                 vanishingY: _profile.Geometry.VanishingY,
-                spawnGateY: spawnGateY);
+                spawnGateY: spawnGateY,
+                scheduleHorizonSeconds: 1.2);
         }
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
