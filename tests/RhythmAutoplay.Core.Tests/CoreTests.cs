@@ -422,4 +422,32 @@ public class ProjectivePredictorTests
         Assert.Single(expired);
         Assert.True(expired[0].Scheduled);
     }
+
+    [Fact]
+    public void Tracker_LateCommit_WaitsForWindowThenSchedulesOnce()
+    {
+        // 遅延確定（v0.3.10）: 予測が立っても到達まで commitWindow を切るまでは
+        // 確定せず、窓に入ってから一度だけ、正確な到達時刻で確定する。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.94, vanishingY: 0.12, commitWindowSeconds: 0.15);
+        int scheduled = 0;
+        double hit = 0;
+        double scheduledAt = -1;
+        for (int i = 0; i <= 68; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            foreach (var sn in tracker.Observe(t, new[] { det }))
+            {
+                scheduled++;
+                hit = sn.THit;
+                scheduledAt = t;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
+        // 真の到達 1.1301 に対して、確定は窓（0.15 秒）に入ってから
+        Assert.True(scheduledAt >= 1.1301 - 0.15 - 1e-9, $"scheduledAt={scheduledAt:F3} は早すぎる");
+    }
 }

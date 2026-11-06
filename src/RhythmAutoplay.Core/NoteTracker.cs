@@ -71,6 +71,7 @@ public sealed class LaneNoteTracker
     private readonly double _maxResidual;
     private readonly double _vanishingY;
     private readonly double _spawnGateY;
+    private readonly double _commitWindowSeconds;
 
     public LaneNoteTracker(
         double judgmentY,
@@ -79,7 +80,8 @@ public sealed class LaneNoteTracker
         double scheduleHorizonSeconds = 2.0,
         double maxResidual = 0.012,
         double vanishingY = double.NaN,
-        double spawnGateY = double.NaN)
+        double spawnGateY = double.NaN,
+        double commitWindowSeconds = 0)
     {
         _judgmentY = judgmentY;
         _matchToleranceY = matchToleranceY;
@@ -88,6 +90,7 @@ public sealed class LaneNoteTracker
         _maxResidual = maxResidual;
         _vanishingY = vanishingY;
         _spawnGateY = spawnGateY;
+        _commitWindowSeconds = commitWindowSeconds;
     }
 
     public int ActiveTrackCount => _tracks.Count;
@@ -233,10 +236,22 @@ public sealed class LaneNoteTracker
                 // 終わってしまうため、票が入るまで予約を保留する。
                 ArrowDirection? modal = best.ModalDirection;
                 bool directionReady = best.Kind != NoteKind.Arrow || modal is not null;
+                // 遅延確定（v0.3.10）: 予測が立っても即座には確定せず、到達まで
+                // commitWindow を切るまで標本を溜め続けて、最後の予測で確定する。
+                // 早期の確定は外挿区間が長く、ノーツが小さい間の検出端バイアス
+                // （アンチエイリアスで端が内側に寄る等）の変化をそのまま時刻誤差に
+                // 変える。v0.3.9 の実測では GREAT+OK? が 77 件あり、残差（標本内）
+                // では説明できない時刻のばらつきがあった。下限 0.05 秒は、遅れて
+                // 生まれた軌跡を取りこぼさないための締切。
+                double commitThreshold = _commitWindowSeconds <= 0
+                    ? double.PositiveInfinity
+                    : Math.Max(_commitWindowSeconds, 0.05);
+                bool commitReady = hitTime - timeSeconds <= commitThreshold;
                 if (predicted
                     && bornAboveGate
                     && moved
                     && directionReady
+                    && commitReady
                     && residual <= _maxResidual
                     && hitTime >= timeSeconds - 0.02
                     && hitTime <= timeSeconds + _scheduleHorizonSeconds)
