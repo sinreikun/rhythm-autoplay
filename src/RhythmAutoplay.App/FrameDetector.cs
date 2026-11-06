@@ -19,6 +19,9 @@ public sealed class FrameDetector
 
     public FrameDetector(GameProfile profile) => _profile = profile;
 
+    /// <summary>固定ライン横断方式（engine=line）で使うライン在席走査の有効化。</summary>
+    public bool LineMode { get; set; }
+
     public List<NoteDetection> Detect(CapturedFrame frame)
     {
         var results = new List<NoteDetection>();
@@ -36,7 +39,56 @@ public sealed class FrameDetector
         {
             DetectLane(frame, lane, pyTop, pyJudge, bands, results);
         }
+        if (LineMode)
+        {
+            ScanLines(frame, results);
+        }
         return results;
+    }
+
+    /// <summary>
+    /// 固定ライン上の在席走査（v0.3.42）。各ライン・各レーンについて、
+    /// ライン行（±2px）とレーン 3 列のどこかにノーツ色があれば、その
+    /// ラインにその色が在席するという検出を 1 件出す。在席の立ち上がりを
+    /// 横断イベントとして読むのは LineCrossingTracker の仕事で、ここは
+    /// 「その行に色があるか」だけを毎フレーム申告する。塊の成立条件を
+    /// 課さないため、薄い・小さいノーツでもライン上では拾える。
+    /// </summary>
+    private void ScanLines(CapturedFrame frame, List<NoteDetection> results)
+    {
+        LaneGeometry geo = _profile.Geometry;
+        int w = frame.Width, h = frame.Height;
+        foreach (double lineY in LineCrossingTracker.LineYs)
+        {
+            int pyC = (int)(lineY * h);
+            for (int lane = 0; lane < _profile.LaneCount; lane++)
+            {
+                double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
+                double halfSpread = geo.LaneWidthAt(_profile.LaneCount, lineY) * w * 0.30;
+                PixelColor found = PixelColor.None;
+                for (int dpy = -2; dpy <= 2 && found == PixelColor.None; dpy += 2)
+                {
+                    int py = Math.Clamp(pyC + dpy, 0, h - 1);
+                    foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
+                    {
+                        int px = Math.Clamp((int)(cx * w + off), 0, w - 1);
+                        var (r, g, b) = frame.PixelAt(px, py);
+                        PixelColor c = ColorClassifier.Classify(r, g, b);
+                        if (c != PixelColor.None)
+                        {
+                            found = c;
+                            break;
+                        }
+                    }
+                }
+                if (found != PixelColor.None)
+                {
+                    results.Add(new NoteDetection(
+                        lane, ToKind(found), null, cx, lineY, frame.TimeSeconds,
+                        IsLinePresence: true));
+                }
+            }
+        }
     }
 
     private void DetectLane(

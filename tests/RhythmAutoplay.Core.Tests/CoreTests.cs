@@ -791,3 +791,84 @@ public class ProjectivePredictorTests
     }
 
 }
+
+public class LineCrossingTrackerTests
+{
+    private const double Van = 0.39;
+
+    private static List<NoteDetection> PresenceAt(double t, double noteY, NoteKind kind = NoteKind.Red)
+    {
+        var dets = new List<NoteDetection>();
+        foreach (double lineY in LineCrossingTracker.LineYs)
+        {
+            // 在席 = ノーツ下端がライン行（-0.003）へ到達し、上端（厚み 0.02）が
+            // 抜けるまで。検出器のライン走査（行 ±2px）の実挙動に合わせる。
+            if (noteY >= lineY - 0.003 && noteY <= lineY + 0.017)
+            {
+                dets.Add(new NoteDetection(0, kind, null, 0.4, lineY, t, IsLinePresence: true));
+            }
+        }
+        return dets;
+    }
+
+    [Fact]
+    public void LineCrossings_ScheduleOnceWithPredictedHit()
+    {
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        double scheduledHit = 0;
+        // w レート 2.13 のノーツ。ライン0 (y=0.80, w=2.439) を t=1.000 に横断。
+        // 判定 (w=1.815) 到達は t = 1.0 + (2.439-1.815)/2.13 = 1.2931。
+        double wAt(double t) => 2.439 - 2.13 * (t - 1.0);
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            double y = Van + 1.0 / wAt(t);
+            foreach (var note in tracker.Observe(t, PresenceAt(t, y)))
+            {
+                scheduledCount++;
+                scheduledHit = note.THit;
+            }
+        }
+        Assert.Equal(1, scheduledCount);
+        Assert.True(Math.Abs(scheduledHit - 1.2931) < 0.012,
+            $"scheduledHit={scheduledHit:F4}");
+    }
+
+    [Fact]
+    public void LineFlicker_AloneNeverSchedules()
+    {
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        // ライン0 の在席が毎フレーム点滅しても、横断の鎖が伸びなければ予約しない。
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            var dets = i % 2 == 0
+                ? new List<NoteDetection> { new(0, NoteKind.Red, null, 0.4, LineCrossingTracker.LineYs[0], t, IsLinePresence: true) }
+                : new List<NoteDetection>();
+            scheduledCount += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
+    public void WrongRateCrossings_DoNotChain()
+    {
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        // レート 6.0 (判定文字の漂流など) の横断列は、公称レート予測と
+        // 合わず鎖に接続できないため、予約に至らない。
+        double wAt(double t) => 2.439 - 6.0 * (t - 1.0);
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            double y = Van + 1.0 / wAt(t);
+            scheduledCount += tracker.Observe(t, PresenceAt(t, y)).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+}

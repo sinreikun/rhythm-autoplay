@@ -31,7 +31,8 @@ public sealed record NoteDetection(
     ArrowDirection? Direction,
     double X,
     double Y,
-    double TimeSeconds);
+    double TimeSeconds,
+    bool IsLinePresence = false);
 
 /// <summary>スケジューラへ渡す入力イベント（キー down/up の列）。</summary>
 /// <param name="Tag">
