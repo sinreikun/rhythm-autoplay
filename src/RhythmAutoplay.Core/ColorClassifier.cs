@@ -65,8 +65,10 @@ public static class ColorClassifier
         {
             return PixelColor.Yellow;
         }
-        if (h >= 0.55 && h < 0.70)
+        if (h >= 0.50 && h < 0.70)
         {
+            // HYPNOSYNC の青ノーツはシアン寄り（実測 RGB 43,207,254 → 色相 0.537）。
+            // 0.55 始まりでは取りこぼすため 0.50 から拾う（v0.3.0 実機で確認）。
             return PixelColor.Blue;
         }
         if (h >= 0.70 && h < 0.90)
