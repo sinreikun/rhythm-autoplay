@@ -947,4 +947,27 @@ public class HybridGapFillTrackerTests
         Assert.Equal(1, scheduledCount);
         Assert.NotEmpty(tracker.DrainSuppressed());
     }
+
+    [Fact]
+    public void ShortFragment_IsGatedOut()
+    {
+        var tracker = new HybridGapFillTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        // 下部で少しだけ見えた断片（標本 7 個）。塊追跡なら予約に届くが、
+        // 穴埋めの信頼ゲート（標本 8 以上）で落とされる。
+        double wAt(double t) => 2.439 - 2.13 * (t - 1.0);
+        for (int i = 0; i <= 30; i++)
+        {
+            double t = 1.18 + i / 60.0;
+            double y = Van + 1.0 / wAt(t);
+            var dets = new List<NoteDetection>();
+            if (i < 7)
+            {
+                dets.Add(new NoteDetection(0, NoteKind.Red, null, 0.4, y, t));
+            }
+            scheduledCount += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
 }

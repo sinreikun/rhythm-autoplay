@@ -18,11 +18,18 @@ namespace RhythmAutoplay.Core;
 /// 100ms 前、ラインの予約が同 110ms 以上前と、通常はラインが先行する
 /// ため稀。残った二重はセッション側の 35ms 抑制と「誤キーは無害」の
 /// 判定モデルが受ける。
+/// v0.3.50: 穴埋めの信頼ゲート。初版（v0.3.49）の実測では塊の予約が
+/// 680 件も通過し、その時刻誤差は中央値 17.3ms（10ms 以内 28%）と
+/// 断片由来のゴミが大半だった。本物の取りこぼしは下部帯域まで見えて
+/// いた長い軌跡のはずなので、標本 8 以上かつ残差 0.006 以下の予約
+/// だけを通す。
 /// </summary>
 public sealed class HybridGapFillTracker : ILaneTracker
 {
     private const double MergeWindowSeconds = 0.06;
     private const double LineRecordLifetimeSeconds = 1.5;
+    private const int GapFillMinSamples = 8;
+    private const double GapFillMaxResidual = 0.006;
 
     private readonly LineCrossingTracker _line;
     private readonly LaneNoteTracker _track;
@@ -83,7 +90,9 @@ public sealed class HybridGapFillTracker : ILaneTracker
                     break;
                 }
             }
-            if (covered)
+            bool confident = sn.SampleCount >= GapFillMinSamples
+                && sn.Residual <= GapFillMaxResidual;
+            if (covered || !confident)
             {
                 _suppressed.Add(new SuppressedDuplicate(sn.Kind, sn.THit));
             }
