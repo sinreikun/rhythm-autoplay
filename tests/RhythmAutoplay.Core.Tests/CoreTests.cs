@@ -128,6 +128,8 @@ public class ColorClassifierTests
     [InlineData(255, 40, 40, PixelColor.Red)]
     [InlineData(255, 80, 160, PixelColor.Red)] // ピンク寄りも赤系に含める
     [InlineData(60, 120, 255, PixelColor.Blue)]
+    [InlineData(43, 207, 254, PixelColor.Blue)] // HYPNOSYNC 青ノーツ実測色 (h=0.537)
+    [InlineData(169, 32, 104, PixelColor.Red)] // HYPNOSYNC ピンクノーツ実測色 (h=0.912)
     [InlineData(170, 60, 230, PixelColor.Purple)]
     [InlineData(250, 210, 40, PixelColor.Yellow)]
     [InlineData(20, 20, 30, PixelColor.None)] // 暗い背景
