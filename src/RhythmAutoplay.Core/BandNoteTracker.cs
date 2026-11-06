@@ -23,6 +23,11 @@ public interface ILaneTracker
 /// 合い・縫合の誤接続」は、帯の外で同一性を持たないことで構造的に消える。
 /// 帯の中で分断した場合に備え、発火済み予約と到達時刻が近い同キー予約は
 /// 抑制する（同じノーツの二重発火防止）。
+/// v0.3.15: 初版は 60fps 前提の定数だったが、キャプチャループの実測は
+/// 約 31fps で検出もちらつく。v0.3.14 の Fly Again 実測では候補 2334 件
+/// （大半が 0.07 秒の無音分割で死ぬ 1〜2 サンプルの断片）に S=341、
+/// CRINGE 259（従来方式 41）。無音許容と接続ギャップを 31fps の
+/// 約 4 フレーム分へ広げて再測する。
 /// </summary>
 public sealed class BandNoteTracker : ILaneTracker
 {
@@ -113,13 +118,17 @@ public sealed class BandNoteTracker : ILaneTracker
             double bestGap = double.PositiveInfinity;
             foreach (Candidate c in _open)
             {
-                if (c.Kind != det.Kind || timeSeconds - c.LastSeenTime > 0.07)
+                if (c.Kind != det.Kind || timeSeconds - c.LastSeenTime > 0.13)
                 {
                     continue;
                 }
                 double expected = ExtrapolateY(c, timeSeconds);
                 double gap = det.Y - expected;
-                if (gap < -0.02 || gap > 0.06)
+                // 下限は広げない: 高密度の同レーン連続ノーツでは後続ノーツが
+                // 先行候補のすぐ後ろ（約 -0.03）に入ってくるため、-0.04 まで
+                // 広げると取り込んで 1 本に潰れる（単体テストで実証）。
+                // 上限だけ +0.10 へ広げる（ちらつき後の再出現は前方にずれる）。
+                if (gap < -0.02 || gap > 0.10)
                 {
                     continue;
                 }
@@ -155,13 +164,13 @@ public sealed class BandNoteTracker : ILaneTracker
             }
         }
 
-        // 閉じ時: 帯の上端に達した、検出が 0.07 秒途切れた、のどちらか。
+        // 閉じ時: 帯の上端に達した、検出が 0.13 秒途切れた、のどちらか。
         // その瞬間に 1 回だけ予測して予約（または不成立として回収）する。
         for (int i = _open.Count - 1; i >= 0; i--)
         {
             Candidate c = _open[i];
             bool exitedTop = c.LastY >= _bandTopY - 0.007;
-            bool wentSilent = timeSeconds - c.LastSeenTime > 0.07;
+            bool wentSilent = timeSeconds - c.LastSeenTime > 0.13;
             if (!exitedTop && !wentSilent)
             {
                 continue;
