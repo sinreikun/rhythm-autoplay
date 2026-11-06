@@ -35,6 +35,10 @@ try
     string apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
     string releaseJson = await http.GetStringAsync(apiUrl);
     string? latestTag = ExtractJsonString(releaseJson, "tag_name");
+    if (latestTag is null)
+    {
+        Console.WriteLine("最新版の情報（tag_name）を読み取れませんでした。");
+    }
 
     if (latestTag is not null && (latestTag != installedVersion || !haveUsableBody))
     {
@@ -117,35 +121,51 @@ static void WaitForKeyIfInteractive()
 }
 
 // AOT ではリフレクション型の JSON シリアライザを使わない。
-// 必要な2項目だけを単純な文字列走査で取り出す。
+// 必要な項目だけを文字列走査で取り出す。
+// 注意: GitHub API は空白なしの compact JSON を返す（"tag_name":"v0.1.0"）。
+// ": " のような空白を前提にすると全項目が黙って null になる（v0.1.0 の実バグ）。
+// キーの直後の空白は可変として扱うこと。
 static string? ExtractJsonString(string json, string key)
 {
-    string marker = $"\"{key}\": \"";
+    string marker = $"\"{key}\":";
     int start = json.IndexOf(marker, StringComparison.Ordinal);
     if (start < 0)
     {
         return null;
     }
-    start += marker.Length;
-    int end = json.IndexOf('"', start);
-    return end < 0 ? null : json[start..end];
+    return ReadJsonStringValue(json, start + marker.Length);
 }
 
 static string? FindAssetUrl(string releaseJson, string assetName)
 {
-    string nameMarker = $"\"name\": \"{assetName}\"";
+    // 資産オブジェクトでは name の後に browser_download_url が来る。
+    string nameMarker = $"\"{assetName}\"";
     int nameIndex = releaseJson.IndexOf(nameMarker, StringComparison.Ordinal);
     if (nameIndex < 0)
     {
         return null;
     }
-    string urlMarker = "\"browser_download_url\": \"";
+    string urlMarker = "\"browser_download_url\":";
     int start = releaseJson.IndexOf(urlMarker, nameIndex, StringComparison.Ordinal);
     if (start < 0)
     {
         return null;
     }
-    start += urlMarker.Length;
-    int end = releaseJson.IndexOf('"', start);
-    return end < 0 ? null : releaseJson[start..end];
+    return ReadJsonStringValue(releaseJson, start + urlMarker.Length);
+}
+
+static string? ReadJsonStringValue(string json, int index)
+{
+    // index の直後から、空白を飛ばして "…" を読む。
+    while (index < json.Length && char.IsWhiteSpace(json[index]))
+    {
+        index++;
+    }
+    if (index >= json.Length || json[index] != '"')
+    {
+        return null;
+    }
+    int start = index + 1;
+    int end = json.IndexOf('"', start);
+    return end < 0 ? null : json[start..end];
 }
