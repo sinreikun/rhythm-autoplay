@@ -64,7 +64,13 @@ public sealed class FrameDetector
 
         void Flush()
         {
-            if (runColor == PixelColor.None || coloredPx < MinBlobPx)
+            // 塊の成立条件: 色のついた標本が最低 3 つあり、かつ縦の広がりが
+            // MinBlobPx 以上（または色標本だけで MinBlobPx 分ある）こと。
+            // 白帯の橋渡しだけでできた塊（coloredPx=0）は弾く。標本数だけで
+            // 判定すると薄いノーツ（広がり 8〜11px = 標本 4〜6）を落とすため、
+            // 広がりとの併用にする（v0.3.7、TRANCE 譜面の実測から）。
+            if (runColor == PixelColor.None || coloredPx < 3
+                || (runLast - runStart < MinBlobPx && coloredPx < MinBlobPx))
             {
                 return;
             }
