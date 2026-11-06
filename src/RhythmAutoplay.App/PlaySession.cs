@@ -1,1 +1,218 @@
-dXNpbmcgU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzOwp1c2luZyBSaHl0aG1BdXRvcGxheS5Db3JlOwp1c2luZyBBcnJvd0RpcmVjdGlvbiA9IFJoeXRobUF1dG9wbGF5LkNvcmUuQXJyb3dEaXJlY3Rpb247CgpuYW1lc3BhY2UgUmh5dGhtQXV0b3BsYXkuQXBwOwoKcHVibGljIHNlYWxlZCBjbGFzcyBQbGF5T3B0aW9ucwp7CiAgICAvLy8gPHN1bW1hcnk+5YWl5Yqb44KS6YCB44KJ44Ga44CB5qSc5Ye644Go55m654Gr5LqI5a6a44Gu6KGo56S644Gg44GR44Gr44GZ44KL77yI6LyD5q2j44O75qSc6Ki855So77yJ44CCPC9zdW1tYXJ5PgogICAgcHVibGljIGJvb2wgRHJ5UnVuIHsgZ2V0OyBpbml0OyB9CiAgICAvLy8gPHN1bW1hcnk+5YWo44OS44OD44OI44Gu55m654Gr5pmC5Yi744Gr5Yqg44GI44KL44Kq44OV44K744OD44OIIFttc13jgILmraPjgafpgYXjgY/jgIHosqDjgafml6njgY/jgII8L3N1bW1hcnk+CiAgICBwdWJsaWMgZG91YmxlIE9mZnNldE1pbGxpc2Vjb25kcyB7IGdldDsgaW5pdDsgfQogICAgLy8vIDxzdW1tYXJ5PuiHquWLlee1guS6huOBvuOBp+OBruenkuaVsOOAgjAgPSDnhKHliLbpmZDvvIhGOSAvIEN0cmwrQyDjgafntYLkuobvvInjgII8L3N1bW1hcnk+CiAgICBwdWJsaWMgaW50IER1cmF0aW9uU2Vjb25kcyB7IGdldDsgaW5pdDsgfQogICAgLy8vIDxzdW1tYXJ5PuS6iOe0hOODu+eZuueBq+OCpOODmeODs+ODiOOCkuaZguWIu+OBpOOBjeOBp+abuOOBjeWHuuOBmeiouuaWreODreOCsOOBruS/neWtmOWFiOOAgm51bGwg44Gn54Sh5Yq544CCPC9zdW1tYXJ5PgogICAgcHVibGljIHN0cmluZz8gRXZlbnRMb2dEaXJlY3RvcnkgeyBnZXQ7IGluaXQ7IH0KfQoKLy8vIDxzdW1tYXJ5PuODl+ODrOOCpOS4reOBrue1seioiOOAgkdVSSDjgYzjg53jg7zjg6rjg7PjgrDjgZfjgabooajnpLrjgZnjgovjgII8L3N1bW1hcnk+CnB1YmxpYyBzZWFsZWQgY2xhc3MgUGxheVN0YXRzCnsKICAgIHB1YmxpYyBsb25nIEZyYW1lczsKICAgIHB1YmxpYyBpbnQgU2NoZWR1bGVkOwogICAgcHVibGljIGludCBGaXJlZDsKfQoKLy8vIDxzdW1tYXJ5PgovLy8g5a6f44OX44Os44Kk57WM6LevOiDjgq3jg6Pjg5fjg4Hjg6Mg4oaSIOaknOWHuiDihpIg6L+96LehL+WIsOmBlOS6iOa4rCDihpIg44K544Kx44K444Ol44O844OrIOKGkiBTZW5kSW5wdXTjgIIKLy8vIOe1guS6huOBryBGOSDjgq3jg7zvvIjjgrLjg7zjg6DlgbTjga7jgq3jg7zjgajooZ3nqoHjgZfjgarjgYTvvInjgYsgQ3RybCtD44CB44G+44Gf44GvIFJlcXVlc3RTdG9w44CCCi8vLyA8L3N1bW1hcnk+CnB1YmxpYyBzZWFsZWQgY2xhc3MgUGxheVNlc3Npb24KewogICAgcHJpdmF0ZSBjb25zdCBpbnQgVmtGOSA9IDB4Nzg7CgogICAgcHJpdmF0ZSByZWFkb25seSBHYW1lUHJvZmlsZSBfcHJvZmlsZTsKICAgIHByaXZhdGUgcmVhZG9ubHkgUGxheU9wdGlvbnMgX29wdGlvbnM7CiAgICBwcml2YXRlIHJlYWRvbmx5IEFjdGlvbjxzdHJpbmc+PyBfbG9nOwogICAgcHJpdmF0ZSB2b2xhdGlsZSBib29sIF9jYW5jZWxsZWQ7CgogICAgcHVibGljIFBsYXlTZXNzaW9uKEdhbWVQcm9maWxlIHByb2ZpbGUsIFBsYXlPcHRpb25zIG9wdGlvbnMsIEFjdGlvbjxzdHJpbmc+PyBsb2cgPSBudWxsKQogICAgewogICAgICAgIF9wcm9maWxlID0gcHJvZmlsZTsKICAgICAgICBfb3B0aW9ucyA9IG9wdGlvbnM7CiAgICAgICAgX2xvZyA9IGxvZzsKICAgIH0KCiAgICBwdWJsaWMgUGxheVN0YXRzIFN0YXRzIHsgZ2V0OyB9ID0gbmV3KCk7CgogICAgcHVibGljIHZvaWQgUmVxdWVzdFN0b3AoKSA9PiBfY2FuY2VsbGVkID0gdHJ1ZTsKCiAgICBwcml2YXRlIHZvaWQgTG9nKHN0cmluZyBtZXNzYWdlKQogICAgewogICAgICAgIENvbnNvbGUuV3JpdGVMaW5lKG1lc3NhZ2UpOwogICAgICAgIF9sb2c/Lkludm9rZShtZXNzYWdlKTsKICAgIH0KCiAgICBwdWJsaWMgaW50IFJ1bigpCiAgICB7CiAgICAgICAgTG9nKCQi5a++6LGh44OX44Ot44K744K5IHtfcHJvZmlsZS5XaW5kb3dQcm9jZXNzTmFtZX0uZXhlIOOBruOCpuOCo+ODs+ODieOCpuOCkuaOouOBl+OBpuOBhOOBvuOBmeKApiIpOwogICAgICAgIEludFB0ciBod25kID0gSW50UHRyLlplcm87CiAgICAgICAgZm9yIChpbnQgaSA9IDA7IGkgPCAxMDAgJiYgaHduZCA9PSBJbnRQdHIuWmVybyAmJiAhX2NhbmNlbGxlZDsgaSsrKQogICAgICAgIHsKICAgICAgICAgICAgaHduZCA9IFdpbmRvd0NhcHR1cmVyLkZpbmRXaW5kb3dCeVByb2Nlc3NOYW1lKF9wcm9maWxlLldpbmRvd1Byb2Nlc3NOYW1lKTsKICAgICAgICAgICAgaWYgKGh3bmQgPT0gSW50UHRyLlplcm8pCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgIFRocmVhZC5TbGVlcCg1MDApOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGlmIChod25kID09IEludFB0ci5aZXJvKQogICAgICAgIHsKICAgICAgICAgICAgTG9nKCLjgqbjgqPjg7Pjg4njgqbjgYzopovjgaTjgYvjgorjgb7jgZvjgpPjgafjgZfjgZ/jgILjgrLjg7zjg6DjgpLotbfli5XjgZfjgabjgYvjgonjgYroqabjgZfjgY/jgaDjgZXjgYTjgIIiKTsKICAgICAgICAgICAgcmV0dXJuIDE7CiAgICAgICAgfQoKICAgICAgICB1c2luZyB2YXIgY2FwdHVyZXIgPSBuZXcgV2luZG93Q2FwdHVyZXIoaHduZCk7CiAgICAgICAgdmFyIGRldGVjdG9yID0gbmV3IEZyYW1lRGV0ZWN0b3IoX3Byb2ZpbGUpOwogICAgICAgIHZhciB0cmFja2VycyA9IG5ldyBMYW5lTm90ZVRyYWNrZXJbX3Byb2ZpbGUuTGFuZUNvdW50XTsKICAgICAgICAvLyDlh7rnj77jgrLjg7zjg4g6IOODrOODvOODs+S4iuerr+OBi+OCiTQ1JeOCiOOCiuS4i+OBp+WIneOCgeOBpuimi+OBiOOBn+WhiuOBryBVSe+8iOWIpOWumuaWh+Wtl+ODuwogICAgICAgIC8vIOOCs+ODs+ODnOaVsOWtl++8ieOBqOOBv+OBquOBl+eZuueBq+OBl+OBquOBhOOAgkhZUE5PU1lOQyDjga7liKTlrprmloflrZcgQkFTRUQhIOOBrwogICAgICAgIC8vIFniiYgwLjcy44CcMC45MCDjga7nr4Tlm7Ljgavlh7rjgovvvIgyMDI2LTExLTA2IOOCueODiuODg+ODl+OCt+ODp+ODg+ODiOWun+a4rOOBpwogICAgICAgIC8vIDAuNzY1IOS7mOi/keOBruWHuuePvuOCkueiuuiqje+8ieOAguacrOeJqeOBruODjuODvOODhOOBryAwLjYxIOS7peS4i+OBp+WIneaknOWHuuOBleOCjOOCi+OAggogICAgICAgIGRvdWJsZSBzcGF3bkdhdGVZID0gX3Byb2ZpbGUuR2VvbWV0cnkuVG9wWQogICAgICAgICAgICArIDAuNDUgKiAoX3Byb2ZpbGUuSnVkZ21lbnRMaW5lWSAtIF9wcm9maWxlLkdlb21ldHJ5LlRvcFkpOwogICAgICAgIGZvciAoaW50IGxhbmUgPSAwOyBsYW5lIDwgdHJhY2tlcnMuTGVuZ3RoOyBsYW5lKyspCiAgICAgICAgewogICAgICAgICAgICB0cmFja2Vyc1tsYW5lXSA9IG5ldyBMYW5lTm90ZVRyYWNrZXIoCiAgICAgICAgICAgICAgICBfcHJvZmlsZS5KdWRnbWVudExpbmVZLAogICAgICAgICAgICAgICAgdmFuaXNoaW5nWTogX3Byb2ZpbGUuR2VvbWV0cnkuVmFuaXNoaW5nWSwKICAgICAgICAgICAgICAgIHNwYXduR2F0ZVk6IHNwYXduR2F0ZVkpOwogICAgICAgIH0KICAgICAgICB2YXIgc2NoZWR1bGVyID0gbmV3IElucHV0U2NoZWR1bGVyKCk7CiAgICAgICAgZG91YmxlIG9mZnNldFNlY29uZHMgPSBfb3B0aW9ucy5PZmZzZXRNaWxsaXNlY29uZHMgLyAxMDAwLjA7CgogICAgICAgIC8vIOiouuaWreODreOCsDog5LqI57SEIChTKSDjgajnmbrngasgKEYpIOOCkuOCu+ODg+OCt+ODp+ODs+aZguioiOOBruaZguWIu+OBpOOBjeOBp+aui+OBmeOAggogICAgICAgIC8vIOeZuueBq+ihjOOBriBzY2hlZEVyciDjga/jgIznmbrngavmmYLliLsg4oiSIOS6iOWumuaZguWIu+OAjeOBp+OCueOCseOCuOODpeODvOODqeOBrumBheOCjOOCkuekuuOBmeOAggogICAgICAgIFN0cmVhbVdyaXRlcj8gZXZlbnRMb2cgPSBudWxsOwogICAgICAgIGlmIChfb3B0aW9ucy5FdmVudExvZ0RpcmVjdG9yeSAhPSBudWxsKQogICAgICAgIHsKICAgICAgICAgICAgRGlyZWN0b3J5LkNyZWF0ZURpcmVjdG9yeShfb3B0aW9ucy5FdmVudExvZ0RpcmVjdG9yeSk7CiAgICAgICAgICAgIHN0cmluZyBwYXRoID0gUGF0aC5Db21iaW5lKF9vcHRpb25zLkV2ZW50TG9nRGlyZWN0b3J5LAogICAgICAgICAgICAgICAgJCJwbGF5LXtEYXRlVGltZS5Ob3c6eXl5eU1NZGQtSEhtbXNzfS50eHQiKTsKICAgICAgICAgICAgZXZlbnRMb2cgPSBuZXcgU3RyZWFtV3JpdGVyKHBhdGgpIHsgQXV0b0ZsdXNoID0gdHJ1ZSB9OwogICAgICAgICAgICBMb2coJCLjgrvjg4Pjgrfjg6fjg7Pjg63jgrA6IHtwYXRofSIpOwogICAgICAgIH0KCiAgICAgICAgQ29uc29sZS5DYW5jZWxLZXlQcmVzcyArPSAoXywgZSkgPT4KICAgICAgICB7CiAgICAgICAgICAgIGUuQ2FuY2VsID0gdHJ1ZTsKICAgICAgICAgICAgX2NhbmNlbGxlZCA9IHRydWU7CiAgICAgICAgfTsKCiAgICAgICAgTG9nKF9vcHRpb25zLkRyeVJ1bgogICAgICAgICAgICA/ICJEUlktUlVOIOOBp+mWi+Wni+OBl+OBvuOBme+8iOWFpeWKm+OBr+mAgeOCiuOBvuOBm+OCk++8ieOAgkY5IOOBp+e1guS6huOBl+OBvuOBmeOAgiIKICAgICAgICAgICAgOiAi5a6f44OX44Os44Kk44KS6ZaL5aeL44GX44G+44GZ44CCRjkg44Gn57WC5LqG44GX44G+44GZ44CCIik7CiAgICAgICAgaWYgKF9vcHRpb25zLk9mZnNldE1pbGxpc2Vjb25kcyAhPSAwKQogICAgICAgIHsKICAgICAgICAgICAgTG9nKCQi44Kq44OV44K744OD44OIOiB7X29wdGlvbnMuT2Zmc2V0TWlsbGlzZWNvbmRzOiswOy0wfSBtcyIpOwogICAgICAgIH0KCiAgICAgICAgbG9uZyBmcmFtZXMgPSAwOwogICAgICAgIGludCBzY2hlZHVsZWQgPSAwLCBmaXJlZCA9IDA7CiAgICAgICAgZG91YmxlIHN0YXJ0ZWRBdCA9IGNhcHR1cmVyLk5vdzsKICAgICAgICB2YXIga2V5c0Rvd24gPSBuZXcgSGFzaFNldDxzdHJpbmc+KCk7CgogICAgICAgIC8vIOacn+mZkOOBruadpeOBn+WFpeWKm+OCkuWFiOOBq+eZuueBq+OBl+OBpuOBi+OCieOCreODo+ODl+ODgeODo+ODu+aknOWHuuOBq+WFpeOCiwogICAgICAgIC8vIO+8iOaknOWHuuWHpueQhuOBruOBtuOCk+eZuueBq+OBjOmBheOCjOOCi+OBruOCkumBv+OBkeOCi++8ieOAggogICAgICAgIHZvaWQgRmlyZUR1ZSgpCiAgICAgICAgewogICAgICAgICAgICBmb3JlYWNoIChTY2hlZHVsZWRJbnB1dCBkdWUgaW4gc2NoZWR1bGVyLkNvbGxlY3REdWUoY2FwdHVyZXIuTm93KSkKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgaWYgKF9vcHRpb25zLkRyeVJ1bikKICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICBjb250aW51ZTsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIGlmIChkdWUuSXNEb3duKQogICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgIC8vIOWQjOOCreODvOOBrumAo+aJkzog5YmN44Gu5oq85LiL44GM44G+44Gg5L+d5oyB5Lit44Gq44KJ44CB5YWI44Gr6Zui44GX44Gm44GL44KJCiAgICAgICAgICAgICAgICAgICAgLy8g5oq844GX55u044GZ44CC6Zui44GV44Ga44GrIGRvd24g44KS6YeN44Gt44KL44Go44Ky44O844Og5YG044Gn5paw44GX44GECiAgICAgICAgICAgICAgICAgICAgLy8g5oq85LiL44Go44GX44Gm5pWw44GI44KJ44KM44Ga44CB6YCj57aa44OO44O844OE44KS5Y+W44KK44GT44G844GZ44CCCiAgICAgICAgICAgICAgICAgICAgaWYgKGtleXNEb3duLkNvbnRhaW5zKGR1ZS5LZXkpKQogICAgICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICAgICAgSW5wdXRTZW5kZXIuU2VuZChkdWUuS2V5LCBmYWxzZSk7CiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIElucHV0U2VuZGVyLlNlbmQoZHVlLktleSwgdHJ1ZSk7CiAgICAgICAgICAgICAgICAgICAga2V5c0Rvd24uQWRkKGR1ZS5LZXkpOwogICAgICAgICAgICAgICAgICAgIGZpcmVkKys7CiAgICAgICAgICAgICAgICAgICAgZXZlbnRMb2c/LldyaXRlTGluZSgKICAgICAgICAgICAgICAgICAgICAgICAgJCJGIG5vdz17Y2FwdHVyZXIuTm93OkYzfSBrZXk9e2R1ZS5LZXl9IGR1ZT17ZHVlLlRpbWVTZWNvbmRzOkYzfSBzY2hlZEVycj17KGNhcHR1cmVyLk5vdyAtIGR1ZS5UaW1lU2Vjb25kcykgKiAxMDAwOkYwfW1zIik7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICBlbHNlIGlmIChrZXlzRG93bi5SZW1vdmUoZHVlLktleSkpCiAgICAgICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAgICAgSW5wdXRTZW5kZXIuU2VuZChkdWUuS2V5LCBmYWxzZSk7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICB9CgogICAgICAgIHdoaWxlICghX2NhbmNlbGxlZCkKICAgICAgICB7CiAgICAgICAgICAgIGlmICgoR2V0QXN5bmNLZXlTdGF0ZShWa0Y5KSAmIDB4ODAwMCkgIT0gMCkKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgYnJlYWs7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaWYgKF9vcHRpb25zLkR1cmF0aW9uU2Vjb25kcyA+IDAgJiYgY2FwdHVyZXIuTm93IC0gc3RhcnRlZEF0ID4gX29wdGlvbnMuRHVyYXRpb25TZWNvbmRzKQogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICBicmVhazsKICAgICAgICAgICAgfQoKICAgICAgICAgICAgRmlyZUR1ZSgpOwoKICAgICAgICAgICAgQ2FwdHVyZWRGcmFtZSBmcmFtZTsKICAgICAgICAgICAgdHJ5CiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgIGZyYW1lID0gY2FwdHVyZXIuQ2FwdHVyZSgpOwogICAgICAgICAgICB9CiAgICAgICAgICAgIGNhdGNoIChJbnZhbGlkT3BlcmF0aW9uRXhjZXB0aW9uKQogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICBUaHJlYWQuU2xlZXAoMTAwKTsKICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICB9CiAgICAgICAgICAgIGZyYW1lcysrOwogICAgICAgICAgICBkb3VibGUgbm93ID0gZnJhbWUuVGltZVNlY29uZHM7CgogICAgICAgICAgICBmb3JlYWNoIChJR3JvdXBpbmc8aW50LCBOb3RlRGV0ZWN0aW9uPiBncm91cCBpbiBkZXRlY3Rvci5EZXRlY3QoZnJhbWUpLkdyb3VwQnkoZCA9PiBkLkxhbmUpKQogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICB2YXIgcmVhZHkgPSB0cmFja2Vyc1tncm91cC5LZXldLk9ic2VydmUobm93LCBncm91cC5Ub0xpc3QoKSk7CiAgICAgICAgICAgICAgICBmb3JlYWNoICgoTm90ZUtpbmQga2luZCwgQXJyb3dEaXJlY3Rpb24/IGRpcmVjdGlvbiwgZG91YmxlIHRIaXQpIGluIHJlYWR5KQogICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgIHZhciBub3RlID0gbmV3IE5vdGVEZXRlY3Rpb24oZ3JvdXAuS2V5LCBraW5kLCBkaXJlY3Rpb24sIDAsIF9wcm9maWxlLkp1ZGdtZW50TGluZVksIG5vdyk7CiAgICAgICAgICAgICAgICAgICAgZm9yZWFjaCAoU2NoZWR1bGVkSW5wdXQgZXYgaW4gS2V5UGxhbkJ1aWxkZXIuQnVpbGRUYXAoX3Byb2ZpbGUsIG5vdGUsIHRIaXQgKyBvZmZzZXRTZWNvbmRzKSkKICAgICAgICAgICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAgICAgICAgIHNjaGVkdWxlci5FbnF1ZXVlKGV2KTsKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgc2NoZWR1bGVkKys7CiAgICAgICAgICAgICAgICAgICAgZXZlbnRMb2c/LldyaXRlTGluZSgKICAgICAgICAgICAgICAgICAgICAgICAgJCJTIG5vdz17bm93OkYzfSBsYW5lPXtncm91cC5LZXl9IGtpbmQ9e2tpbmR9IGRpcj17ZGlyZWN0aW9ufSB0SGl0PXt0SGl0OkYzfSIpOwogICAgICAgICAgICAgICAgICAgIGlmIChfb3B0aW9ucy5EcnlSdW4pCiAgICAgICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgICAgICBMb2coJCJbZHJ5XSBsYW5lPXtncm91cC5LZXkgKyAxfSB7a2luZH0gZGlyPXtkaXJlY3Rpb24/LlRvU3RyaW5nKCkgPz8gIi0ifSB0X2hpdCDjgb7jgacge3RIaXQgLSBub3c6RjN9cyIpOwogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQoKICAgICAgICAgICAgRmlyZUR1ZSgpOwoKICAgICAgICAgICAgU3RhdHMuRnJhbWVzID0gZnJhbWVzOwogICAgICAgICAgICBTdGF0cy5TY2hlZHVsZWQgPSBzY2hlZHVsZWQ7CiAgICAgICAgICAgIFN0YXRzLkZpcmVkID0gZmlyZWQ7CiAgICAgICAgICAgIFRocmVhZC5TbGVlcCgxKTsKICAgICAgICB9CgogICAgICAgIExvZygkIue1guS6huOBl+OBvuOBl+OBn+OAguODleODrOODvOODoOaVsD17ZnJhbWVzfSwg44K544Kx44K444Ol44O844Or44GX44Gf44OO44O844OEPXtzY2hlZHVsZWR9LCDnmbrngavjgZfjgZ/jgq3jg7woZG93bik9e2ZpcmVkfSIpOwogICAgICAgIGV2ZW50TG9nPy5EaXNwb3NlKCk7CiAgICAgICAgcmV0dXJuIDA7CiAgICB9CgogICAgW0RsbEltcG9ydCgidXNlcjMyLmRsbCIpXQogICAgcHJpdmF0ZSBzdGF0aWMgZXh0ZXJuIHNob3J0IEdldEFzeW5jS2V5U3RhdGUoaW50IHZLZXkpOwp9Cg==
+using System.Runtime.InteropServices;
+using RhythmAutoplay.Core;
+using ArrowDirection = RhythmAutoplay.Core.ArrowDirection;
+
+namespace RhythmAutoplay.App;
+
+public sealed class PlayOptions
+{
+    /// <summary>入力を送らず、検出と発火予定の表示だけにする（較正・検証用）。</summary>
+    public bool DryRun { get; init; }
+    /// <summary>全ヒットの発火時刻に加えるオフセット [ms]。正で遅く、負で早く。</summary>
+    public double OffsetMilliseconds { get; init; }
+    /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
+    public int DurationSeconds { get; init; }
+    /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
+    public string? EventLogDirectory { get; init; }
+}
+
+/// <summary>プレイ中の統計。GUI がポーリングして表示する。</summary>
+public sealed class PlayStats
+{
+    public long Frames;
+    public int Scheduled;
+    public int Fired;
+}
+
+/// <summary>
+/// 実プレイ経路: キャプチャ → 検出 → 追跡/到達予測 → スケジュール → SendInput。
+/// 終了は F9 キー（ゲーム側のキーと衝突しない）か Ctrl+C、または RequestStop。
+/// </summary>
+public sealed class PlaySession
+{
+    private const int VkF9 = 0x78;
+
+    private readonly GameProfile _profile;
+    private readonly PlayOptions _options;
+    private readonly Action<string>? _log;
+    private volatile bool _cancelled;
+
+    public PlaySession(GameProfile profile, PlayOptions options, Action<string>? log = null)
+    {
+        _profile = profile;
+        _options = options;
+        _log = log;
+    }
+
+    public PlayStats Stats { get; } = new();
+
+    public void RequestStop() => _cancelled = true;
+
+    private void Log(string message)
+    {
+        Console.WriteLine(message);
+        _log?.Invoke(message);
+    }
+
+    public int Run()
+    {
+        Log($"対象プロセス {_profile.WindowProcessName}.exe のウィンドウを探しています…");
+        IntPtr hwnd = IntPtr.Zero;
+        for (int i = 0; i < 100 && hwnd == IntPtr.Zero && !_cancelled; i++)
+        {
+            hwnd = WindowCapturer.FindWindowByProcessName(_profile.WindowProcessName);
+            if (hwnd == IntPtr.Zero)
+            {
+                Thread.Sleep(500);
+            }
+        }
+        if (hwnd == IntPtr.Zero)
+        {
+            Log("ウィンドウが見つかりませんでした。ゲームを起動してからお試しください。");
+            return 1;
+        }
+
+        using var capturer = new WindowCapturer(hwnd);
+        var detector = new FrameDetector(_profile);
+        var trackers = new LaneNoteTracker[_profile.LaneCount];
+        // 出現ゲート: レーン上端から45%より下で初めて見えた塊は UI（判定文字・
+        // コンボ数字）とみなし発火しない。HYPNOSYNC の判定文字 BASED! は
+        // Y≈0.72〜0.90 の範囲に出る（2026-11-06 スナップショット実測で
+        // 0.765 付近の出現を確認）。本物のノーツは 0.61 以下で初検出される。
+        double spawnGateY = _profile.Geometry.TopY
+            + 0.45 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
+        for (int lane = 0; lane < trackers.Length; lane++)
+        {
+            trackers[lane] = new LaneNoteTracker(
+                _profile.JudgmentLineY,
+                vanishingY: _profile.Geometry.VanishingY,
+                spawnGateY: spawnGateY);
+        }
+        var scheduler = new InputScheduler();
+        double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
+
+        // 診断ログ: 予約 (S) と発火 (F) をセッション時計の時刻つきで残す。
+        // 発火行の schedErr は「発火時刻 − 予定時刻」でスケジューラの遅れを示す。
+        StreamWriter? eventLog = null;
+        if (_options.EventLogDirectory != null)
+        {
+            Directory.CreateDirectory(_options.EventLogDirectory);
+            string path = Path.Combine(_options.EventLogDirectory,
+                $"play-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+            eventLog = new StreamWriter(path) { AutoFlush = true };
+            Log($"セッションログ: {path}");
+        }
+
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            _cancelled = true;
+        };
+
+        Log(_options.DryRun
+            ? "DRY-RUN で開始します（入力は送りません）。F9 で終了します。"
+            : "実プレイを開始します。F9 で終了します。");
+        if (_options.OffsetMilliseconds != 0)
+        {
+            Log($"オフセット: {_options.OffsetMilliseconds:+0;-0} ms");
+        }
+
+        long frames = 0;
+        int scheduled = 0, fired = 0;
+        double startedAt = capturer.Now;
+        var keysDown = new HashSet<string>();
+
+        // 期限の来た入力を先に発火してからキャプチャ・検出に入る
+        // （検出処理のぶん発火が遅れるのを避ける）。
+        void FireDue()
+        {
+            foreach (ScheduledInput due in scheduler.CollectDue(capturer.Now))
+            {
+                if (_options.DryRun)
+                {
+                    continue;
+                }
+                if (due.IsDown)
+                {
+                    // 同キーの連打: 前の押下がまだ保持中なら、先に離してから
+                    // 押し直す。離さずに down を重ねるとゲーム側で新しい
+                    // 押下として数えられず、連続ノーツを取りこぼす。
+                    if (keysDown.Contains(due.Key))
+                    {
+                        InputSender.Send(due.Key, false);
+                    }
+                    InputSender.Send(due.Key, true);
+                    keysDown.Add(due.Key);
+                    fired++;
+                    eventLog?.WriteLine(
+                        $"F now={capturer.Now:F3} key={due.Key} due={due.TimeSeconds:F3} schedErr={(capturer.Now - due.TimeSeconds) * 1000:F0}ms");
+                }
+                else if (keysDown.Remove(due.Key))
+                {
+                    InputSender.Send(due.Key, false);
+                }
+            }
+        }
+
+        while (!_cancelled)
+        {
+            if ((GetAsyncKeyState(VkF9) & 0x8000) != 0)
+            {
+                break;
+            }
+            if (_options.DurationSeconds > 0 && capturer.Now - startedAt > _options.DurationSeconds)
+            {
+                break;
+            }
+
+            FireDue();
+
+            CapturedFrame frame;
+            try
+            {
+                frame = capturer.Capture();
+            }
+            catch (InvalidOperationException)
+            {
+                Thread.Sleep(100);
+                continue;
+            }
+            frames++;
+            double now = frame.TimeSeconds;
+
+            foreach (IGrouping<int, NoteDetection> group in detector.Detect(frame).GroupBy(d => d.Lane))
+            {
+                var ready = trackers[group.Key].Observe(now, group.ToList());
+                foreach ((NoteKind kind, ArrowDirection? direction, double tHit) in ready)
+                {
+                    var note = new NoteDetection(group.Key, kind, direction, 0, _profile.JudgmentLineY, now);
+                    foreach (ScheduledInput ev in KeyPlanBuilder.BuildTap(_profile, note, tHit + offsetSeconds))
+                    {
+                        scheduler.Enqueue(ev);
+                    }
+                    scheduled++;
+                    eventLog?.WriteLine(
+                        $"S now={now:F3} lane={group.Key} kind={kind} dir={direction} tHit={tHit:F3}");
+                    if (_options.DryRun)
+                    {
+                        Log($"[dry] lane={group.Key + 1} {kind} dir={direction?.ToString() ?? "-"} t_hit まで {tHit - now:F3}s");
+                    }
+                }
+            }
+
+            FireDue();
+
+            Stats.Frames = frames;
+            Stats.Scheduled = scheduled;
+            Stats.Fired = fired;
+            Thread.Sleep(1);
+        }
+
+        Log($"終了しました。フレーム数={frames}, スケジュールしたノーツ={scheduled}, 発火したキー(down)={fired}");
+        eventLog?.Dispose();
+        return 0;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+}
