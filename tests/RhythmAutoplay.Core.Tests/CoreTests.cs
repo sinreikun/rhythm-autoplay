@@ -139,6 +139,18 @@ public class ColorClassifierTests
     {
         Assert.Equal(expected, ColorClassifier.Classify(r, g, b));
     }
+
+    [Fact]
+    public void ClassifyLoose_ReadsTranslucentNoteOverWhiteBand()
+    {
+        // ピンク (169,32,104) を白の上に 50% で重ねた色: 通常分類では
+        // 彩度が落ちて None になるが、緩い分類では色相から赤と読める。
+        Assert.Equal(PixelColor.None, ColorClassifier.Classify(212, 143, 179));
+        Assert.Equal(PixelColor.Red, ColorClassifier.ClassifyLoose(212, 143, 179));
+        // 白そのものや暗いゴーストは緩い分類でも拾わない。
+        Assert.Equal(PixelColor.None, ColorClassifier.ClassifyLoose(255, 255, 255));
+        Assert.Equal(PixelColor.None, ColorClassifier.ClassifyLoose(65, 43, 54));
+    }
 }
 
 public class LaneNoteTrackerTests
