@@ -818,9 +818,9 @@ public class LineCrossingTrackerTests
             judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
         int scheduledCount = 0;
         double scheduledHit = 0;
-        // w レート 2.13 のノーツ。ライン0 (y=0.80, w=2.439) を t=1.000 に横断。
-        // 判定 (w=1.815) 到達は t = 1.0 + (2.439-1.815)/2.13 = 1.2931。
-        double wAt(double t) => 2.439 - 2.13 * (t - 1.0);
+        // 横断観測の実効レート 1.70 のノーツ。ライン0 (y=0.80, w=2.439) を
+        // t=1.000 に横断。判定 (w=1.815) 到達は t = 1.0 + 0.624/1.70 = 1.3672。
+        double wAt(double t) => 2.439 - 1.70 * (t - 1.0);
         for (int i = 0; i <= 40; i++)
         {
             double t = 0.90 + i / 60.0;
@@ -832,7 +832,11 @@ public class LineCrossingTrackerTests
             }
         }
         Assert.Equal(1, scheduledCount);
-        Assert.True(Math.Abs(scheduledHit - 1.2931) < 0.012,
+        // シミュレーションの在席窓（下端がライン -0.003 に触れたら在席）は
+        // 実機の在席（同色 2 標本の証拠が必要で立ち上がりが遅れる）より
+        // 早く読むため、許容は 20ms に置く。ms 単位の較正は実機ログの
+        // グリッド分析で行う（単体テストは「1 回だけ・概ね正確に」の確認）。
+        Assert.True(Math.Abs(scheduledHit - 1.3672) < 0.020,
             $"scheduledHit={scheduledHit:F4}");
     }
 

@@ -17,11 +17,16 @@ public sealed class LineCrossingTracker : ILaneTracker
     /// <summary>横断ラインの Y（画面比率）。検出器のライン走査と共有する。</summary>
     public static readonly double[] LineYs = { 0.80, 0.845, 0.89 };
 
-    private const double NominalRate = 2.13; // w/秒（移動時間 1.86 秒の実測から）
-    private const double MinRate = 1.2;
-    private const double MaxRate = 3.4;
+    // 横断観測の実効レート（w/秒、v=0.39 空間）。塊の下端が従う 2.13 では
+    // なく、在席の立ち上がりという観測量に固有の値で、実測の鎖内ばらつき
+    // が最小になる 1.70 を使う（v0.3.44 のログで検証: レート固定・切片のみ
+    // 推定で 3 横断の中央誤差 4.2ms / ±10ms 内 87%、自由フィットの
+    // 8.0ms / 61% を大きく上回った）。スクロール速度は曲によらず一定
+    // （実測済み）なので、レートを全ノーツ共通の定数として固定できる。
+    private const double CrossingRate = 1.70;
+    private const double HitCorrectionSeconds = -0.003;
     private const double AttachToleranceSeconds = 0.035;
-    private const double MaxFitResidualSeconds = 0.012;
+    private const double MaxEstimateDeviationSeconds = 0.018;
     private const double EmitHorizonSeconds = 0.35;
     private const double RefractorySeconds = 0.05;
     private const double ChainTimeoutSeconds = 0.30;
@@ -277,58 +282,35 @@ public sealed class LineCrossingTracker : ILaneTracker
         }
     }
 
-    private double PredictCrossing(Chain ch, double w)
+    /// <summary>
+    /// レート固定の到達推定。各横断は「その時刻にそのラインの w を通過した」
+    /// という観測で、到達時刻の推定値 t + (w − w判定) / レート を 1 つ返す。
+    /// 鎖の推定はそれらの平均。ばらつき（最大偏差）が小さいほど観測が
+    /// 一貫している。自由フィットと違い、短い基線でも誤差が増幅されない。
+    /// </summary>
+    private double EstimateHit(Chain ch, out double maxDeviation)
     {
-        if (ch.Crossings.Count >= 2 && Fit(ch, out double a, out double b, out _))
+        double sum = 0;
+        var estimates = new List<double>(ch.Crossings.Count);
+        foreach ((double t, double w) in ch.Crossings)
         {
-            return (w - a) / b;
+            double est = t + (w - _judgmentW) / CrossingRate;
+            estimates.Add(est);
+            sum += est;
         }
-        (double lt, double lw) = ch.Crossings[^1];
-        return lt + (lw - w) / NominalRate;
+        double mean = sum / estimates.Count;
+        maxDeviation = 0;
+        foreach (double est in estimates)
+        {
+            maxDeviation = Math.Max(maxDeviation, Math.Abs(est - mean));
+        }
+        return mean;
     }
 
-    /// <summary>w = a + b*t の最小二乗。b は負（w は時間とともに減る）。</summary>
-    private static bool Fit(Chain ch, out double a, out double b, out double maxResidualT)
+    private double PredictCrossing(Chain ch, double w)
     {
-        a = 0;
-        b = 0;
-        maxResidualT = double.PositiveInfinity;
-        int n = ch.Crossings.Count;
-        if (n < 2)
-        {
-            return false;
-        }
-        double mt = 0, mw = 0;
-        foreach ((double t, double w) in ch.Crossings)
-        {
-            mt += t;
-            mw += w;
-        }
-        mt /= n;
-        mw /= n;
-        double sxx = 0, sxy = 0;
-        foreach ((double t, double w) in ch.Crossings)
-        {
-            sxx += (t - mt) * (t - mt);
-            sxy += (t - mt) * (w - mw);
-        }
-        if (sxx <= 0)
-        {
-            return false;
-        }
-        b = sxy / sxx;
-        a = mw - b * mt;
-        if (b >= -1e-9)
-        {
-            return false;
-        }
-        maxResidualT = 0;
-        foreach ((double t, double w) in ch.Crossings)
-        {
-            double predT = (w - a) / b;
-            maxResidualT = Math.Max(maxResidualT, Math.Abs(predT - t));
-        }
-        return true;
+        double tHit = EstimateHit(ch, out _);
+        return tHit - (w - _judgmentW) / CrossingRate;
     }
 
     private void TrySchedule(Chain ch, double now, List<ScheduledNote> scheduled, bool isRevision)
@@ -337,44 +319,15 @@ public sealed class LineCrossingTracker : ILaneTracker
         {
             return;
         }
-        if (!Fit(ch, out double a, out double b, out double maxRes))
-        {
-            ch.FailReason = "nofit";
-            return;
-        }
-        double rate = -b;
-        if (rate < MinRate || rate > MaxRate)
-        {
-            ch.FailReason = "rate";
-            return;
-        }
-        if (maxRes > MaxFitResidualSeconds)
+        double mean = EstimateHit(ch, out double maxDev);
+        if (maxDev > MaxEstimateDeviationSeconds)
         {
             ch.FailReason = "resid";
             return;
         }
-        // 在席の立ち上がりはノーツ下端がラインに触れる数 px 前から起きる
-        // ため、横断時刻は系統的に少し早く読める（v0.3.43 実測で中央値
-        // -4.2ms）。到達予測に +4ms の補正を入れる。
-        double tHit = (_judgmentW - a) / b + 0.004;
+        double tHit = mean + HitCorrectionSeconds;
         if (!ch.Scheduled)
         {
-            // 予約は原則 3 横断そろってから（v0.3.43）。2 点フィットは残差が
-            // 恒等的に 0 で品質ゲートが効かず、短い基線の誤差が外挿で増幅
-            // された（v0.3.42 実測: 中央誤差 14.2ms、±10ms 内 38%）。
-            // 3 本目のライン到達予測を 40ms 過ぎても横断が来ない場合のみ、
-            // 2 点フィットで落下傘予約する（ライン2横断はヒット 87ms 前、
-            // 予測+40ms でもヒットまで約 47ms 残る）。
-            if (ch.Crossings.Count < 3)
-            {
-                double wLast = W(LineYs[LineYs.Length - 1]);
-                double predLast = (wLast - a) / b;
-                if (now <= predLast + 0.040)
-                {
-                    ch.FailReason = "wait3";
-                    return;
-                }
-            }
             if (tHit - now < -0.02 || tHit - now > EmitHorizonSeconds)
             {
                 ch.FailReason = "horizon";
@@ -383,13 +336,13 @@ public sealed class LineCrossingTracker : ILaneTracker
             ch.Scheduled = true;
             ch.ScheduledHit = tHit;
             scheduled.Add(new ScheduledNote(
-                ch.Kind, null, tHit, maxRes, ch.Crossings.Count,
+                ch.Kind, null, tHit, maxDev, ch.Crossings.Count,
                 LineYs[0], ch.FirstTime));
         }
         else if (isRevision && Math.Abs(tHit - ch.ScheduledHit) >= 0.006)
         {
             _revisions.Add(new RevisedNote(
-                ch.Kind, null, ch.ScheduledHit, tHit, maxRes, ch.Crossings.Count));
+                ch.Kind, null, ch.ScheduledHit, tHit, maxDev, ch.Crossings.Count));
             ch.ScheduledHit = tHit;
         }
     }
