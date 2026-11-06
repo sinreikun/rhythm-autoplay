@@ -69,8 +69,18 @@ public sealed class FrameDetector
             // 白帯の橋渡しだけでできた塊（coloredPx=0）は弾く。標本数だけで
             // 判定すると薄いノーツ（広がり 8〜11px = 標本 4〜6）を落とすため、
             // 広がりとの併用にする（v0.3.7、TRANCE 譜面の実測から）。
-            if (runColor == PixelColor.None || coloredPx < 3
-                || (runLast - runStart < MinBlobPx && coloredPx < MinBlobPx))
+            // 静かな上部帯（下端 y<0.72）では最小サイズを緩める（v0.3.41）。
+            // 実測ではトラックの初検出 Y の中央値が 0.79 で、大半のノーツが
+            // 判定文字・レーン発光の飛び交う帯域の内側で生まれていた。
+            // 出現直後のノーツは高さ 4〜6px しかなく、通常の MinBlobPx=7
+            // では構造的に弾かれる。上部帯には判定文字もレーン発光も無い
+            // ため、小さい塊を拾ってもゴミは増えにくい（残りは追跡側の
+            // 出現・移動・残差ゲートが捌く）。
+            bool upperZone = runLast / (double)h < 0.72;
+            int minColored = upperZone ? 2 : 3;
+            int minBlobPx = upperZone ? 4 : MinBlobPx;
+            if (runColor == PixelColor.None || coloredPx < minColored
+                || (runLast - runStart < minBlobPx && coloredPx < minBlobPx))
             {
                 return;
             }
