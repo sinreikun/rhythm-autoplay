@@ -9,11 +9,8 @@ namespace RhythmAutoplay.Core;
 /// - ライン方式には全検出を渡し（矢印はその内部委譲、通常塊は無視される）、
 ///   その予約を正とする。
 /// - 塊追跡には通常ノーツの塊だけを渡し、その予約は「同種で到達時刻が
-///   60ms 以内にライン予約がある」場合に重複として捨てる。残った予約が
-///   穴埋めになる。
-/// 60ms の根拠: 同一レーン同キーの実在する最短間隔は 16 分音符
-/// （BPM 195 で 77ms）で、それより十分に狭く、両方式の予測誤差
-/// （各 10ms 級）の和より十分に広い。
+///   抑制窓（当初 60ms、v0.3.51 で 150ms）以内にライン予約がある」
+///   場合に重複として捨てる。残った予約が穴埋めになる。
 /// 逆順（塊が先に予約し、ラインが後から来る）は塊の確定窓がヒット
 /// 100ms 前、ラインの予約が同 110ms 以上前と、通常はラインが先行する
 /// ため稀。残った二重はセッション側の 35ms 抑制と「誤キーは無害」の
@@ -23,10 +20,17 @@ namespace RhythmAutoplay.Core;
 /// 断片由来のゴミが大半だった。本物の取りこぼしは下部帯域まで見えて
 /// いた長い軌跡のはずなので、標本 8 以上かつ残差 0.006 以下の予約
 /// だけを通す。
+/// v0.3.51: 抑制窓を 60ms から 150ms へ拡大。v0.3.50 の実測では
+/// CRINGE が 40→31 に減る一方で GREAT/OK が 2→22 に増えた。ライン
+/// 予約と同レーン同種で 160ms 以内にあった塊予約が 176 件あり、
+/// 誤差 20ms 級の塊発射がラインの BASED を先に叩いて奪っていた。
+/// 同種 16 分の実在間隔は 77ms で、150ms 窓は隣の実ノーツの穴埋めを
+/// 巻き込む場合があるが、ラインの被覆率が高い現状では「ライン予約の
+/// 近くにある塊予約は同じノーツの断片」が多数派と判断した。
 /// </summary>
 public sealed class HybridGapFillTracker : ILaneTracker
 {
-    private const double MergeWindowSeconds = 0.06;
+    private const double MergeWindowSeconds = 0.15;
     private const double LineRecordLifetimeSeconds = 1.5;
     private const int GapFillMinSamples = 8;
     private const double GapFillMaxResidual = 0.006;
