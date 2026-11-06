@@ -165,6 +165,12 @@ public sealed class LaneNoteTracker
                 // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
                 // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
                 bool bornAboveGate = double.IsNaN(_spawnGateY) || best.FirstY <= _spawnGateY;
+                // 動きの確認: 実際に画面を下ってきた軌跡だけを発火する。
+                // 判定文字やコンボ数字は静止（またはフェード）するため、
+                // 出現位置のゲートを緩めてもここで弾ける。高速譜面では
+                // 本物のノーツの初検出がゲート近くまで下がるため、位置では
+                // なく動きで見分けるのが本筋（v0.3.7、TRANCE 譜面の実測から）。
+                bool moved = best.LastY - best.FirstY >= 0.03;
                 // 矢印は方向が決まるまで発火しない。出現直後は模様が小さく
                 // 推定が付かないことが多く、方向なしで予約すると入力できないまま
                 // 終わってしまうため、票が入るまで予約を保留する。
@@ -172,6 +178,7 @@ public sealed class LaneNoteTracker
                 bool directionReady = best.Kind != NoteKind.Arrow || modal is not null;
                 if (predicted
                     && bornAboveGate
+                    && moved
                     && directionReady
                     && residual <= _maxResidual
                     && hitTime >= timeSeconds - 0.02
