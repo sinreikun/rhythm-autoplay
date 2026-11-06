@@ -30,6 +30,11 @@ public sealed class PlayOptions
     /// 仮説の検証用。通常は 0（プロファイル値 40ms）。
     /// </summary>
     public double HoldMilliseconds { get; init; }
+    /// <summary>
+    /// 診断用（v0.3.39）: 全軌跡の全標本を P 行としてイベントログに残す。
+    /// フィット窓（直近12標本 vs 全標本など）の優劣をオフラインで事後評価するため。
+    /// </summary>
+    public bool LogSamples { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -120,6 +125,7 @@ public sealed class PlaySession
                     spawnGateY: spawnGateY,
                     scheduleHorizonSeconds: 1.2,
                     commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0);
+            trackers[lane].CollectSamples = _options.LogSamples;
         }
         Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : "track（軌跡追跡）")}");
         var scheduler = new InputScheduler();
@@ -381,6 +387,13 @@ public sealed class PlaySession
                     if (_options.DryRun)
                     {
                         Log($"[dry] lane={group.Key + 1} {sn.Kind} dir={sn.Direction?.ToString() ?? "-"} t_hit まで {sn.THit - now:F3}s");
+                    }
+                }
+                if (_options.LogSamples)
+                {
+                    foreach ((int id, double st, double sy) in trackers[group.Key].DrainSampleLog())
+                    {
+                        LogEvent($"P lane={group.Key} id={id} t={st:F3} y={sy:F3}");
                     }
                 }
                 foreach (SuppressedDuplicate sd in trackers[group.Key].DrainSuppressed())

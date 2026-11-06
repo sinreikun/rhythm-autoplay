@@ -10,6 +10,12 @@ public interface ILaneTracker
     List<ExpiredTrack> DrainExpired();
     List<SuppressedDuplicate> DrainSuppressed();
     List<RevisedNote> DrainRevisions();
+
+    /// <summary>標本ログ収集の有効化（診断用、v0.3.39）。</summary>
+    bool CollectSamples { get; set; }
+
+    /// <summary>収集した標本 (軌跡ID, 時刻, Y) を取り出す（診断用、v0.3.39）。</summary>
+    List<(int Id, double Time, double Y)> DrainSampleLog();
 }
 
 /// <summary>
@@ -105,6 +111,11 @@ public sealed class BandNoteTracker : ILaneTracker
 
     /// <summary>帯域方式は帯を抜けた時点で軌跡を手放すため、事後修正は行わない。</summary>
     public List<RevisedNote> DrainRevisions() => new();
+
+    /// <summary>帯域方式は標本ログを収集しない（v0.3.39）。</summary>
+    public bool CollectSamples { get; set; }
+
+    public List<(int Id, double Time, double Y)> DrainSampleLog() => new();
 
     public List<ScheduledNote> Observe(
         double timeSeconds, IReadOnlyList<NoteDetection> laneDetections)

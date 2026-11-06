@@ -47,6 +47,7 @@ public sealed class LaneNoteTracker : ILaneTracker
 {
     private sealed class Track
     {
+        public int Id { get; set; }
         public required NoteKind Kind;
         public List<(double Time, double Y)> Samples { get; } = new();
         public bool Scheduled { get; set; }
@@ -133,6 +134,19 @@ public sealed class LaneNoteTracker : ILaneTracker
 
     private readonly List<ExpiredTrack> _expired = new();
     private readonly List<RevisedNote> _revisions = new();
+    private readonly List<(int Id, double Time, double Y)> _sampleLog = new();
+    private int _nextId = 1;
+
+    /// <summary>標本ログ収集の有効化（診断用、v0.3.39）。フィット窓の事後評価のために全標本を残す。</summary>
+    public bool CollectSamples { get; set; }
+
+    /// <summary>前回呼び出し以降に収集した標本を取り出す（診断用、v0.3.39）。</summary>
+    public List<(int Id, double Time, double Y)> DrainSampleLog()
+    {
+        var drained = new List<(int Id, double Time, double Y)>(_sampleLog);
+        _sampleLog.Clear();
+        return drained;
+    }
 
     /// <summary>前回呼び出し以降に消滅した軌跡の診断情報を取り出す（取りこぼし解析用）。</summary>
     public List<ExpiredTrack> DrainExpired()
@@ -207,6 +221,7 @@ public sealed class LaneNoteTracker : ILaneTracker
             {
                 best = new Track
                 {
+                    Id = _nextId++,
                     Kind = det.Kind,
                     LastSeenTime = timeSeconds,
                     LastY = det.Y,
@@ -217,6 +232,10 @@ public sealed class LaneNoteTracker : ILaneTracker
             }
 
             best.Samples.Add((timeSeconds, det.Y));
+            if (CollectSamples)
+            {
+                _sampleLog.Add((best.Id, timeSeconds, det.Y));
+            }
             best.TotalSamples++;
             if (best.Samples.Count > 12)
             {
