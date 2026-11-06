@@ -380,6 +380,14 @@ public sealed class PlaySession
             }
 
             trkMs += (capturer.Now - trkStart) * 1000.0;
+            // 段階別コストは 600 フレームごとにイベントログへも出す（v0.3.34）。
+            // 終了時の要約だけだと drive の強制終了で毎回失われる（v0.3.33 の
+            // 実測ランで発生）。本体の標準出力もリダイレクト時は終了まで
+            // フラッシュされないため、頼れるのはイベントログだけ。
+            if (frames % 600 == 0)
+            {
+                eventLog?.WriteLine($"# timing capture={capMs / frames:F2} detect={detMs / frames:F2} track={trkMs / frames:F2}");
+            }
 
             Stats.Frames = frames;
             Stats.Scheduled = scheduled;
