@@ -36,8 +36,8 @@ else
     return 1;
 }
 
-Console.WriteLine("実プレイ経路（キャプチャ/検出/入力）は v0.2 で入ります。");
-if (args.Contains("--hold") && !Console.IsInputRedirected)
+Console.WriteLine("これは v0.1 の土台確認版です。実プレイ経路（キャプチャ/検出/入力）は v0.2 で入ります。");
+if (!Console.IsInputRedirected)
 {
     Console.WriteLine("何かキーを押すと終了します。");
     Console.ReadKey(intercept: true);
