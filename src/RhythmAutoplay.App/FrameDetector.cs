@@ -50,9 +50,10 @@ public sealed class FrameDetector
                 return;
             }
             // ヒット時にレーン全体が光る演出は、縦に長い run として現れる。
-            // ノーツは薄いバー（実測で判定ライン付近でも 16px 程度）なので、
-            // 画面高の 5% を超える run はノーツではないとして捨てる。
-            int maxBlobPx = Math.Max(28, (int)(frame.Height * 0.05));
+            // ノーツは薄いバー（実測で判定ライン付近でも 16px 程度）で、
+            // 接近した同色2連が1つの run に融合しても高さ 55px 程度に収まる。
+            // 発光は 100px 以上になるため、上限は画面高の 8.5% に置く。
+            int maxBlobPx = Math.Max(40, (int)(frame.Height * 0.085));
             if (runLast - runStart > maxBlobPx)
             {
                 return;
