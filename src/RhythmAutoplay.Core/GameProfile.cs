@@ -44,7 +44,13 @@ public sealed record GameProfile(
             [ArrowDirection.Down] = "S",
             [ArrowDirection.Up] = "W",
         },
-        TapHoldMilliseconds: 40);
+        TapHoldMilliseconds: 40)
+    {
+        Geometry = LaneGeometry.HypnosyncEstimate,
+    };
+
+    /// <summary>レーン形状（透視）。検出器がサンプリング位置を決めるのに使う。</summary>
+    public LaneGeometry Geometry { get; init; } = LaneGeometry.Default;
 }
 
 /// <summary>ノーツ1件を、押すべき入力イベント列に変換する。</summary>
