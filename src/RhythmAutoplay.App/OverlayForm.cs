@@ -10,13 +10,13 @@ namespace RhythmAutoplay.App;
 /// </summary>
 public sealed class OverlayForm : Form
 {
-    private enum Handle { None, TopLeft, TopRight, BottomLeft, BottomRight, TopCenter, Judgment }
+    private enum DragHandle { None, TopLeft, TopRight, BottomLeft, BottomRight, TopCenter, Judgment }
 
     private const int HandleSize = 14;
 
     private readonly Func<GameProfile> _profileProvider;
     private bool _editMode;
-    private Handle _dragging = Handle.None;
+    private DragHandle _dragging = DragHandle.None;
 
     /// <summary>ドラッグで形状が変わった時に、新しいプロファイルで通知する。</summary>
     public event Action<GameProfile>? GeometryChanged;
@@ -125,12 +125,12 @@ public sealed class OverlayForm : Form
         yield return ToPoint(geo.CenterX, profile.JudgmentLineY);       // Judgment
     }
 
-    private Handle HitTest(Point p, GameProfile profile)
+    private DragHandle HitTest(Point p, GameProfile profile)
     {
         var handles = new[]
         {
-            Handle.TopLeft, Handle.TopRight, Handle.BottomLeft,
-            Handle.BottomRight, Handle.TopCenter, Handle.Judgment,
+            DragHandle.TopLeft, DragHandle.TopRight, DragHandle.BottomLeft,
+            DragHandle.BottomRight, DragHandle.TopCenter, DragHandle.Judgment,
         };
         int i = 0;
         foreach (Point h in HandlePoints(profile))
@@ -141,7 +141,7 @@ public sealed class OverlayForm : Form
             }
             i++;
         }
-        return Handle.None;
+        return DragHandle.None;
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -157,13 +157,13 @@ public sealed class OverlayForm : Form
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        _dragging = Handle.None;
+        _dragging = DragHandle.None;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        if (!_editMode || _dragging == Handle.None)
+        if (!_editMode || _dragging == DragHandle.None)
         {
             return;
         }
@@ -176,19 +176,19 @@ public sealed class OverlayForm : Form
 
         switch (_dragging)
         {
-            case Handle.TopLeft:
-            case Handle.TopRight:
+            case DragHandle.TopLeft:
+            case DragHandle.TopRight:
                 topY = Clamp(ny, 0.02, 0.80);
                 topHalf = Clamp(Math.Abs(nx - centerX), 0.01, 0.45);
                 break;
-            case Handle.BottomLeft:
-            case Handle.BottomRight:
+            case DragHandle.BottomLeft:
+            case DragHandle.BottomRight:
                 bottomHalf = Clamp(Math.Abs(nx - centerX), 0.03, 0.49);
                 break;
-            case Handle.TopCenter:
+            case DragHandle.TopCenter:
                 centerX = Clamp(nx, 0.20, 0.80);
                 break;
-            case Handle.Judgment:
+            case DragHandle.Judgment:
                 judgeY = Clamp(ny, 0.50, 0.995);
                 break;
         }
