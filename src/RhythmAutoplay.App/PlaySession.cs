@@ -13,9 +13,17 @@ public sealed class PlayOptions
     public int DurationSeconds { get; init; }
 }
 
+/// <summary>プレイ中の統計。GUI がポーリングして表示する。</summary>
+public sealed class PlayStats
+{
+    public long Frames;
+    public int Scheduled;
+    public int Fired;
+}
+
 /// <summary>
 /// 実プレイ経路: キャプチャ → 検出 → 追跡/到達予測 → スケジュール → SendInput。
-/// 終了は F9 キー（ゲーム側のキーと衝突しない）か Ctrl+C。
+/// 終了は F9 キー（ゲーム側のキーと衝突しない）か Ctrl+C、または RequestStop。
 /// </summary>
 public sealed class PlaySession
 {
@@ -23,17 +31,29 @@ public sealed class PlaySession
 
     private readonly GameProfile _profile;
     private readonly PlayOptions _options;
+    private readonly Action<string>? _log;
     private volatile bool _cancelled;
 
-    public PlaySession(GameProfile profile, PlayOptions options)
+    public PlaySession(GameProfile profile, PlayOptions options, Action<string>? log = null)
     {
         _profile = profile;
         _options = options;
+        _log = log;
+    }
+
+    public PlayStats Stats { get; } = new();
+
+    public void RequestStop() => _cancelled = true;
+
+    private void Log(string message)
+    {
+        Console.WriteLine(message);
+        _log?.Invoke(message);
     }
 
     public int Run()
     {
-        Console.WriteLine($"対象プロセス {_profile.WindowProcessName}.exe のウィンドウを探しています…");
+        Log($"対象プロセス {_profile.WindowProcessName}.exe のウィンドウを探しています…");
         IntPtr hwnd = IntPtr.Zero;
         for (int i = 0; i < 100 && hwnd == IntPtr.Zero && !_cancelled; i++)
         {
@@ -45,7 +65,7 @@ public sealed class PlaySession
         }
         if (hwnd == IntPtr.Zero)
         {
-            Console.WriteLine("ウィンドウが見つかりませんでした。ゲームを起動してからお試しください。");
+            Log("ウィンドウが見つかりませんでした。ゲームを起動してからお試しください。");
             return 1;
         }
 
@@ -65,12 +85,12 @@ public sealed class PlaySession
             _cancelled = true;
         };
 
-        Console.WriteLine(_options.DryRun
+        Log(_options.DryRun
             ? "DRY-RUN で開始します（入力は送りません）。F9 で終了します。"
             : "実プレイを開始します。F9 で終了します。");
         if (_options.OffsetMilliseconds != 0)
         {
-            Console.WriteLine($"オフセット: {_options.OffsetMilliseconds:+0;-0} ms");
+            Log($"オフセット: {_options.OffsetMilliseconds:+0;-0} ms");
         }
 
         long frames = 0;
@@ -114,7 +134,7 @@ public sealed class PlaySession
                     scheduled++;
                     if (_options.DryRun)
                     {
-                        Console.WriteLine($"[dry] lane={group.Key + 1} {kind} dir={direction?.ToString() ?? "-"} t_hit まで {tHit - now:F3}s");
+                        Log($"[dry] lane={group.Key + 1} {kind} dir={direction?.ToString() ?? "-"} t_hit まで {tHit - now:F3}s");
                     }
                 }
             }
@@ -132,10 +152,13 @@ public sealed class PlaySession
                 }
             }
 
+            Stats.Frames = frames;
+            Stats.Scheduled = scheduled;
+            Stats.Fired = fired;
             Thread.Sleep(1);
         }
 
-        Console.WriteLine($"終了しました。フレーム数={frames}, スケジュールしたノーツ={scheduled}, 発火したキー(down)={fired}");
+        Log($"終了しました。フレーム数={frames}, スケジュールしたノーツ={scheduled}, 発火したキー(down)={fired}");
         return 0;
     }
 
