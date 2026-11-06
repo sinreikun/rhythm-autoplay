@@ -365,7 +365,7 @@ public sealed class PlaySession
                 foreach (ExpiredTrack ex in trackers[group.Key].DrainExpired())
                 {
                     LogEvent(
-                        $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4} why={ex.FailReason} dz={ex.DeathbedReason}");
+                        $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4} why={ex.FailReason} dz={ex.DeathbedReason} blr={ex.BestLineResidual:F4}");
                 }
             }
 

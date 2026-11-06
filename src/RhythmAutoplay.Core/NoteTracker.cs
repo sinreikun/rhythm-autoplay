@@ -21,7 +21,8 @@ public readonly record struct ExpiredTrack(
     double LastSeenTime,
     double BestResidual,
     string FailReason = "",
-    string DeathbedReason = "");
+    string DeathbedReason = "",
+    double BestLineResidual = -1);
 
 /// <summary>
 /// 1レーン分のノーツ追跡。フレームごとの検出（中心 Y の列）を同一ノーツの
@@ -260,7 +261,8 @@ public sealed class LaneNoteTracker : ILaneTracker
                 _expired.Add(new ExpiredTrack(
                     t.Kind, t.Scheduled, t.TotalSamples,
                     t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual,
-                    t.LastFailNormal, t.LastFailBypass));
+                    t.LastFailNormal, t.LastFailBypass,
+                    double.IsInfinity(t.BestLineResidual) ? -1 : t.BestLineResidual));
             }
         }
         _tracks.RemoveAll(t =>
@@ -323,8 +325,9 @@ public sealed class LaneNoteTracker : ILaneTracker
         }
         // 最良フィットの保存（v0.3.28）: 標本が十分溜まった時点の直線だけを
         // 残す（出現直後の小標本フィットは残差が偶然小さくても端バイアスを
-        // 含むため、窓が 8 標本以上あるときに限る）。
-        if (predicted && !double.IsNaN(_vanishingY) && track.Samples.Count >= 8
+        // 含むため、窓が 6 標本以上あるときに限る。v0.3.28 の 8 標本では
+        // 実測のゴーストに保存が間に合わない例があったため v0.3.29 で緩和）。
+        if (predicted && !double.IsNaN(_vanishingY) && track.Samples.Count >= 6
             && HitTimePredictor.TryFitProjectiveLine(track.Samples, _vanishingY,
                 out double lv, out double li, out double lres)
             && lres < track.BestLineResidual)
@@ -370,11 +373,16 @@ public sealed class LaneNoteTracker : ILaneTracker
             hitTime < timeSeconds - pastGraceSeconds ? "past" :
             hitTime > timeSeconds + _scheduleHorizonSeconds ? "horizon" :
             "ok";
-        // 最良直線へのフォールバック（v0.3.28）: 現在の窓の適合だけが理由で
-        // 落ちる場合に限り、保存した最良直線で到達時刻を組み直し、その時刻で
-        // 確定窓・過去猶予・ホライズンを判定し直す。他のゲート落ち（出現位置・
-        // 動き・方向）は直線の問題ではないので救済しない。
-        if ((fail == "resid" || fail == "nofit")
+        // 最良直線へのフォールバック（v0.3.28、判定条件を v0.3.29 で是正）:
+        // 現在の窓の適合が信頼できない（予測不成立 or 残差ゲート超え）場合に
+        // 保存した最良直線で到達時刻を組み直し、その時刻で確定窓・過去猶予・
+        // ホライズンを判定し直す。v0.3.28 では「最初に落ちたゲートが resid /
+        // nofit のとき」だけに限定していたが、壊れた適合は到達時刻そのものも
+        // 壊すため、commit や past が先に落ちて救済がマスクされるケースが
+        // 実測で残った（Floating ゴースト 53→44 止まり）。適合の信頼性そのも
+        // のを条件にする。他のゲート（出現位置・動き・方向）は直線の問題では
+        // ないので、フォールバック側でも独立に要求する。
+        if ((!predicted || residual > _maxResidual)
             && track.BestLine is { } bl
             && track.BestLineResidual <= _maxResidual
             && bornAboveGate && moved && directionReady
