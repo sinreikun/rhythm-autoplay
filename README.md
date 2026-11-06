@@ -11,6 +11,18 @@
 2. あとはその exe を実行するだけです。起動のたびに GitHub の最新版を確認し、本体を自動で取得・更新してから起動します（導入先: `%LOCALAPPDATA%\RhythmAutoplay`）。本体を別途ダウンロードする必要はありません。
 3. キー設定は HYPNOSYNC のデフォルトのままで大丈夫です（下の「HYPNOSYNC のキー配置」参照）。ゲーム内でキーを変更している場合は、`profiles/hypnosync.json` を自分の配置に合わせて書き換えてください。
 
+### 実プレイ（v0.2〜）
+
+ランチャー経由ではなく本体を直接使う場合の起動方法です（本体は `%LOCALAPPDATA%\RhythmAutoplay\versions\<版>\RhythmAutoplayBody.exe`）。
+
+```
+RhythmAutoplayBody.exe play                    実プレイ開始（F9 で終了）
+RhythmAutoplayBody.exe play --dry-run          入力せず、検出と発火予定だけ表示（較正用）
+RhythmAutoplayBody.exe play --offset-ms -15    発火時刻の全体オフセットを指定
+```
+
+前提: ゲームのウィンドウが画面上に見えていること（キャプチャは画面キャプチャ方式です）。レーン形状とノーツ色の閾値は初期推定で、実機の dry-run ログで較正します。
+
 ## HYPNOSYNC のキー配置
 
 HYPNOSYNC は4レーンに5色のノーツが流れ、色ごとに対応キーが違う12キー設計です（赤/青はレーンごとに別キー、紫は同時押し、黄はどちらでも可、横長ノーツは方向キー）。本プログラムはゲームのデフォルト配置（EDIT KEYBINDS 画面で確認済み）をそのまま使います。
@@ -35,5 +47,5 @@ HYPNOSYNC は4レーンに5色のノーツが流れ、色ごとに対応キー�
 
 ## 現在の状態
 
-- v0.1.0: 土台版。ランチャー＋自動更新、HYPNOSYNC プロファイル、予測/スケジューラのコアとテスト、CI による版付き Release 公開まで。
-- 次版 v0.2（予定）: キャプチャ→検出→入力の実プレイ経路を、HYPNOSYNC 実機検証と一緒に入れます。SendInput が本作で素直に通るかが最初の確認項目です（docs/design.md §14）。
+- v0.1.x: 土台版。ランチャー＋自動更新、HYPNOSYNC プロファイル、予測/スケジューラのコアとテスト、CI による版付き Release 公開まで。
+- v0.2.0: 実プレイ経路（キャプチャ→レーン検出→追跡/到達予測→SendInput）を実装。レーン形状・色閾値・矢印方向推定は初期推定で、HYPNOSYNC 実機での dry-run 較正と SendInput の通り確認が残作業です（docs/design.md §14）。
