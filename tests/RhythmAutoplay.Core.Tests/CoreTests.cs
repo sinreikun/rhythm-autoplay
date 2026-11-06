@@ -130,6 +130,7 @@ public class ColorClassifierTests
     [InlineData(60, 120, 255, PixelColor.Blue)]
     [InlineData(43, 207, 254, PixelColor.Blue)] // HYPNOSYNC 青ノーツ実測色 (h=0.537)
     [InlineData(169, 32, 104, PixelColor.Red)] // HYPNOSYNC ピンクノーツ実測色 (h=0.912)
+    [InlineData(65, 43, 54, PixelColor.None)] // コンボ数字の半透明ゴースト実測色 (v≈0.25, s≈0.35)
     [InlineData(170, 60, 230, PixelColor.Purple)]
     [InlineData(250, 210, 40, PixelColor.Yellow)]
     [InlineData(20, 20, 30, PixelColor.None)] // 暗い背景
@@ -164,6 +165,38 @@ public class LaneNoteTrackerTests
         Assert.Equal(1, scheduledCount);
         // 0.30 + 0.9 t = 0.94 -> t = 0.7111
         Assert.Equal(0.7111, scheduledHit, precision: 2);
+    }
+
+    [Fact]
+    public void SpawnGate_NoteBornBelowGate_NeverSchedules()
+    {
+        // 判定文字やコンボ数字のような UI は画面下部にいきなり現れる。
+        // ゲートより下で生まれた軌跡は、落下して見えても発火しない。
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, spawnGateY: 0.80);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 10; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.84 + 0.9 * t;
+            var det = new NoteDetection(0, NoteKind.Yellow, null, 0.4, y, t);
+            scheduledCount += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
+    public void SpawnGate_NoteBornAboveGate_Schedules()
+    {
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, spawnGateY: 0.80);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 30; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.30 + 0.9 * t;
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            scheduledCount += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(1, scheduledCount);
     }
 
     [Fact]
