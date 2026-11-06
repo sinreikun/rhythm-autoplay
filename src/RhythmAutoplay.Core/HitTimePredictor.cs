@@ -78,4 +78,84 @@ public static class HitTimePredictor
         residualRms = Math.Sqrt(sumSq / n);
         return true;
     }
+
+    /// <summary>
+    /// 透視投影用の予測。画面上ではノーツは手前ほど加速して見えるため、
+    /// 直線フィットは到達時刻を遅く見積もりすぎる（v0.2.0 の実機で確認した主因）。
+    /// 奥行きに反比例する座標 w = 1 / (y - vanishingY) へ変換すると、
+    /// 等速で近づくノーツは w が時間に対して直線になる。そこで直線フィットし、
+    /// 残差は元の y 座標系に戻して返す（呼び出し側の閾値を共通化するため）。
+    /// </summary>
+    public static bool TryPredictHitTimeProjective(
+        IReadOnlyList<(double Time, double Y)> samples,
+        double targetY,
+        double vanishingY,
+        out double hitTimeSeconds,
+        out double residualRms)
+    {
+        hitTimeSeconds = 0;
+        residualRms = double.PositiveInfinity;
+        if (samples.Count < MinSamples)
+        {
+            return false;
+        }
+        double targetGap = targetY - vanishingY;
+        if (targetGap <= 1e-6)
+        {
+            return false;
+        }
+
+        var transformed = new List<(double Time, double Y)>(samples.Count);
+        for (int i = 0; i < samples.Count; i++)
+        {
+            double gap = samples[i].Y - vanishingY;
+            if (gap <= 1e-6)
+            {
+                return false;
+            }
+            transformed.Add((samples[i].Time, 1.0 / gap));
+        }
+
+        if (!TryPredictHitTime(transformed, 1.0 / targetGap, out hitTimeSeconds, out _))
+        {
+            return false;
+        }
+
+        // 残差を y 座標系で測り直す: フィットした直線 w(t) を逆変換して比べる。
+        int n = transformed.Count;
+        double sumT = 0, sumW = 0;
+        for (int i = 0; i < n; i++)
+        {
+            sumT += transformed[i].Time;
+            sumW += transformed[i].Y;
+        }
+        double meanT = sumT / n, meanW = sumW / n;
+        double sTT = 0, sTW = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double dt = transformed[i].Time - meanT;
+            sTT += dt * dt;
+            sTW += dt * (transformed[i].Y - meanW);
+        }
+        if (sTT <= 0)
+        {
+            return false;
+        }
+        double velocity = sTW / sTT;
+        double intercept = meanW - velocity * meanT;
+        double sumSq = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double wFit = intercept + velocity * transformed[i].Time;
+            if (Math.Abs(wFit) < 1e-9)
+            {
+                return false;
+            }
+            double yFit = vanishingY + 1.0 / wFit;
+            double d = samples[i].Y - yFit;
+            sumSq += d * d;
+        }
+        residualRms = Math.Sqrt(sumSq / n);
+        return true;
+    }
 }
