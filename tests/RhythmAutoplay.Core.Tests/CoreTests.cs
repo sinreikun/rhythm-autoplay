@@ -450,4 +450,35 @@ public class ProjectivePredictorTests
         // 真の到達 1.1301 に対して、確定は窓（0.15 秒）に入ってから
         Assert.True(scheduledAt >= 1.1301 - 0.15 - 1e-9, $"scheduledAt={scheduledAt:F3} は早すぎる");
     }
+
+    [Fact]
+    public void Tracker_DeathbedRescue_SchedulesWhenDetectionsStopEarly()
+    {
+        // 死に際の救済（v0.3.11）: 検出が途中で止まった軌跡は、確定窓が開く前に
+        // タイムアウトで消える。消滅の瞬間に最後の予測で一度だけ予約される。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.94, vanishingY: 0.12, commitWindowSeconds: 0.15);
+        int scheduled = 0;
+        double hit = 0;
+        // t=0..0.5 まで標本を与え、その後検出が止まる（到達 1.1301 まで遠い）
+        for (int i = 0; i <= 30; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            scheduled += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(0, scheduled); // 窓（0.15 秒）にはまだ入っていない
+        for (int i = 31; i <= 60; i++)
+        {
+            double t = i / 60.0;
+            foreach (var sn in tracker.Observe(t, Array.Empty<NoteDetection>()))
+            {
+                scheduled++;
+                hit = sn.THit;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
+    }
 }

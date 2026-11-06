@@ -211,55 +211,10 @@ public sealed class LaneNoteTracker
 
             if (!best.Scheduled && best.Samples.Count >= 3)
             {
-                // 透視レーンでは消失点つきの射影予測を使う（等速接近が直線になる座標系）。
-                // vanishingY 未指定（NaN）のプロファイルでは通常の直線予測に倒す。
-                double hitTime, residual;
-                bool predicted = double.IsNaN(_vanishingY)
-                    ? HitTimePredictor.TryPredictHitTime(best.Samples, _judgmentY, out hitTime, out residual)
-                    : HitTimePredictor.TryPredictHitTimeProjective(best.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
-                if (predicted && residual < best.BestResidual)
-                {
-                    best.BestResidual = residual;
-                }
-                // 出現ゲート: 本物のノーツはレーン上端から現れて落下する。
-                // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
-                // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
-                bool bornAboveGate = double.IsNaN(_spawnGateY) || best.FirstY <= _spawnGateY;
-                // 動きの確認: 実際に画面を下ってきた軌跡だけを発火する。
-                // 判定文字やコンボ数字は静止（またはフェード）するため、
-                // 出現位置のゲートを緩めてもここで弾ける。高速譜面では
-                // 本物のノーツの初検出がゲート近くまで下がるため、位置では
-                // なく動きで見分けるのが本筋（v0.3.7、TRANCE 譜面の実測から）。
-                bool moved = best.LastY - best.FirstY >= 0.03;
-                // 矢印は方向が決まるまで発火しない。出現直後は模様が小さく
-                // 推定が付かないことが多く、方向なしで予約すると入力できないまま
-                // 終わってしまうため、票が入るまで予約を保留する。
-                ArrowDirection? modal = best.ModalDirection;
-                bool directionReady = best.Kind != NoteKind.Arrow || modal is not null;
-                // 遅延確定（v0.3.10）: 予測が立っても即座には確定せず、到達まで
-                // commitWindow を切るまで標本を溜め続けて、最後の予測で確定する。
-                // 早期の確定は外挿区間が長く、ノーツが小さい間の検出端バイアス
-                // （アンチエイリアスで端が内側に寄る等）の変化をそのまま時刻誤差に
-                // 変える。v0.3.9 の実測では GREAT+OK? が 77 件あり、残差（標本内）
-                // では説明できない時刻のばらつきがあった。下限 0.05 秒は、遅れて
-                // 生まれた軌跡を取りこぼさないための締切。
-                double commitThreshold = _commitWindowSeconds <= 0
-                    ? double.PositiveInfinity
-                    : Math.Max(_commitWindowSeconds, 0.05);
-                bool commitReady = hitTime - timeSeconds <= commitThreshold;
-                if (predicted
-                    && bornAboveGate
-                    && moved
-                    && directionReady
-                    && commitReady
-                    && residual <= _maxResidual
-                    && hitTime >= timeSeconds - 0.02
-                    && hitTime <= timeSeconds + _scheduleHorizonSeconds)
+                if (TryBuildSchedule(best, timeSeconds, bypassCommit: false) is { } note)
                 {
                     best.Scheduled = true;
-                    ready.Add(new ScheduledNote(
-                        best.Kind, modal, hitTime, residual,
-                        best.TotalSamples, best.FirstY, best.FirstTime));
+                    ready.Add(note);
                 }
             }
         }
@@ -269,6 +224,16 @@ public sealed class LaneNoteTracker
             if (timeSeconds - t.LastSeenTime > _trackTimeoutSeconds
                 || t.LastY > _judgmentY + 0.08)
             {
+                // 死に際の救済（v0.3.11）: 検出が途中で止まった軌跡は、遅延確定の
+                // 窓が開く前にタイムアウトで消えてしまう（矢印は判定帯に近づくと
+                // 検出が止まりやすく、v0.3.10 で予約が 51 件減った）。消滅の瞬間に
+                // 限り、確定窓を無視して最後の予測で予約する。
+                if (!t.Scheduled && t.Samples.Count >= 3
+                    && TryBuildSchedule(t, timeSeconds, bypassCommit: true) is { } lastChance)
+                {
+                    t.Scheduled = true;
+                    ready.Add(lastChance);
+                }
                 _expired.Add(new ExpiredTrack(
                     t.Kind, t.Scheduled, t.TotalSamples,
                     t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual));
@@ -279,5 +244,64 @@ public sealed class LaneNoteTracker
             || t.LastY > _judgmentY + 0.08);
 
         return ready;
+    }
+
+    /// <summary>
+    /// 軌跡の現在の標本から予約を組み立てる。全ゲート（出現位置・動き・方向・
+    /// 残差・到達範囲）を満たす場合のみ返す。bypassCommit=false のときは
+    /// 遅延確定の窓（到達まで commitWindowSeconds を切る）も要求する。
+    /// </summary>
+    private ScheduledNote? TryBuildSchedule(Track track, double timeSeconds, bool bypassCommit)
+    {
+        // 透視レーンでは消失点つきの射影予測を使う（等速接近が直線になる座標系）。
+        // vanishingY 未指定（NaN）のプロファイルでは通常の直線予測に倒す。
+        double hitTime, residual;
+        bool predicted = double.IsNaN(_vanishingY)
+            ? HitTimePredictor.TryPredictHitTime(track.Samples, _judgmentY, out hitTime, out residual)
+            : HitTimePredictor.TryPredictHitTimeProjective(track.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
+        if (predicted && residual < track.BestResidual)
+        {
+            track.BestResidual = residual;
+        }
+        // 出現ゲート: 本物のノーツはレーン上端から現れて落下する。
+        // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
+        // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
+        bool bornAboveGate = double.IsNaN(_spawnGateY) || track.FirstY <= _spawnGateY;
+        // 動きの確認: 実際に画面を下ってきた軌跡だけを発火する。
+        // 判定文字やコンボ数字は静止（またはフェード）するため、
+        // 出現位置のゲートを緩めてもここで弾ける。高速譜面では
+        // 本物のノーツの初検出がゲート近くまで下がるため、位置では
+        // なく動きで見分けるのが本筋（v0.3.7、TRANCE 譜面の実測から）。
+        bool moved = track.LastY - track.FirstY >= 0.03;
+        // 矢印は方向が決まるまで発火しない。出現直後は模様が小さく
+        // 推定が付かないことが多く、方向なしで予約すると入力できないまま
+        // 終わってしまうため、票が入るまで予約を保留する。
+        ArrowDirection? modal = track.ModalDirection;
+        bool directionReady = track.Kind != NoteKind.Arrow || modal is not null;
+        // 遅延確定（v0.3.10）: 予測が立っても即座には確定せず、到達まで
+        // commitWindow を切るまで標本を溜め続けて、最後の予測で確定する。
+        // 早期の確定は外挿区間が長く、ノーツが小さい間の検出端バイアス
+        // （アンチエイリアスで端が内側に寄る等）の変化をそのまま時刻誤差に
+        // 変える。v0.3.9 の実測では GREAT+OK? が 77 件あり、残差（標本内）
+        // では説明できない時刻のばらつきがあった。下限 0.05 秒は、遅れて
+        // 生まれた軌跡を取りこぼさないための締切。
+        double commitThreshold = _commitWindowSeconds <= 0
+            ? double.PositiveInfinity
+            : Math.Max(_commitWindowSeconds, 0.05);
+        bool commitReady = bypassCommit || hitTime - timeSeconds <= commitThreshold;
+        if (predicted
+            && bornAboveGate
+            && moved
+            && directionReady
+            && commitReady
+            && residual <= _maxResidual
+            && hitTime >= timeSeconds - 0.02
+            && hitTime <= timeSeconds + _scheduleHorizonSeconds)
+        {
+            return new ScheduledNote(
+                track.Kind, modal, hitTime, residual,
+                track.TotalSamples, track.FirstY, track.FirstTime);
+        }
+        return null;
     }
 }
