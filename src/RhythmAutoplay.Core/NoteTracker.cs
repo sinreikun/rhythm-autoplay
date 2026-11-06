@@ -219,6 +219,24 @@ public sealed class LaneNoteTracker
             }
         }
 
+        // 検出が止まっている軌跡にも毎フレーム予測を試す（v0.3.12）。
+        // 予測の試行は「新しい検出が対応づいたフレーム」でだけ行っていたため、
+        // 到達直前で検出が途切れた軌跡は、確定窓が開いても誰も試さないまま
+        // タイムアウトしていた。標本は変わらなくても確定窓の判定は時刻で
+        // 変わるので、未対応づけの軌跡も毎フレーム試す。
+        foreach (Track t in _tracks)
+        {
+            if (t.Scheduled || matched.Contains(t) || t.Samples.Count < 3)
+            {
+                continue;
+            }
+            if (TryBuildSchedule(t, timeSeconds, bypassCommit: false) is { } note)
+            {
+                t.Scheduled = true;
+                ready.Add(note);
+            }
+        }
+
         foreach (Track t in _tracks)
         {
             if (timeSeconds - t.LastSeenTime > _trackTimeoutSeconds
@@ -227,9 +245,12 @@ public sealed class LaneNoteTracker
                 // 死に際の救済（v0.3.11）: 検出が途中で止まった軌跡は、遅延確定の
                 // 窓が開く前にタイムアウトで消えてしまう（矢印は判定帯に近づくと
                 // 検出が止まりやすく、v0.3.10 で予約が 51 件減った）。消滅の瞬間に
-                // 限り、確定窓を無視して最後の予測で予約する。
+                // 限り、確定窓を無視して最後の予測で予約する。到達時刻が少し
+                // 過去でも猶予 0.12 秒までは発火する（v0.3.12: 判定ラインを
+                // 越えて即消える軌跡では、消滅時点で到達が過去になっている
+                // ことがあり、猶予なしでは救済が届かなかった）。
                 if (!t.Scheduled && t.Samples.Count >= 3
-                    && TryBuildSchedule(t, timeSeconds, bypassCommit: true) is { } lastChance)
+                    && TryBuildSchedule(t, timeSeconds, bypassCommit: true, pastGraceSeconds: 0.12) is { } lastChance)
                 {
                     t.Scheduled = true;
                     ready.Add(lastChance);
@@ -251,7 +272,7 @@ public sealed class LaneNoteTracker
     /// 残差・到達範囲）を満たす場合のみ返す。bypassCommit=false のときは
     /// 遅延確定の窓（到達まで commitWindowSeconds を切る）も要求する。
     /// </summary>
-    private ScheduledNote? TryBuildSchedule(Track track, double timeSeconds, bool bypassCommit)
+    private ScheduledNote? TryBuildSchedule(Track track, double timeSeconds, bool bypassCommit, double pastGraceSeconds = 0.02)
     {
         // 透視レーンでは消失点つきの射影予測を使う（等速接近が直線になる座標系）。
         // vanishingY 未指定（NaN）のプロファイルでは通常の直線予測に倒す。
@@ -295,7 +316,7 @@ public sealed class LaneNoteTracker
             && directionReady
             && commitReady
             && residual <= _maxResidual
-            && hitTime >= timeSeconds - 0.02
+            && hitTime >= timeSeconds - pastGraceSeconds
             && hitTime <= timeSeconds + _scheduleHorizonSeconds)
         {
             return new ScheduledNote(

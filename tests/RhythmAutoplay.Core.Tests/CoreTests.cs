@@ -481,4 +481,42 @@ public class ProjectivePredictorTests
         Assert.Equal(1, scheduled);
         Assert.Equal(1.1301, hit, precision: 2);
     }
+
+    [Fact]
+    public void Tracker_SilentTrack_CommitsWhenWindowOpens()
+    {
+        // v0.3.12: 到達直前で検出が止まった軌跡でも、検出のないフレームで
+        // 予測を試し続けるため、確定窓が開いた時点で予約される
+        // （以前は試行自体が検出フレームでしか起きず、取りこぼしていた）。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.94, vanishingY: 0.12, commitWindowSeconds: 0.15);
+        int scheduled = 0;
+        double hit = 0;
+        double scheduledAt = -1;
+        // t=0..0.9333 まで標本（到達 1.1301 まで 0.197 秒 = 窓の外）
+        for (int i = 0; i <= 56; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            scheduled += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(0, scheduled);
+        // 以後は検出なし。タイムアウト（最終検出 +0.25 秒 = 1.1833）より前に
+        // 窓が開く（到達 -0.15 秒 = 0.9801）ので、その時点で予約されるはず。
+        for (int i = 57; i <= 66; i++)
+        {
+            double t = i / 60.0;
+            foreach (var sn in tracker.Observe(t, Array.Empty<NoteDetection>()))
+            {
+                scheduled++;
+                hit = sn.THit;
+                scheduledAt = t;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
+        Assert.True(scheduledAt >= 0.9801 - 1e-9 && scheduledAt < 1.10,
+            $"scheduledAt={scheduledAt:F3} は窓入り直後のはず");
+    }
 }
