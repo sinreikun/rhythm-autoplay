@@ -350,20 +350,23 @@ public sealed class LaneNoteTracker : ILaneTracker
     /// 予約済み軌跡の事後修正（v0.3.37）: 確定はヒット 100ms 前に予測を
     /// 固定するが、その後も軌跡は標本を増やし、射影フィットのてこは
     /// ライン際ほど強く効くため、予測は締め直せる。新しい適合が残差
-    /// ゲート（_maxResidual）を通り、確定時より標本が 3 つ以上増え、
+    /// ゲート（_maxResidual）を通り、確定時より標本が 2 つ以上増え、
     /// 旧予測と 8ms 以上ずれる場合にだけ修正する。確定時の残差以下は
     /// 要求しない: 初期の適合は標本が少なく偶然残差が小さい（過適合）
     /// ことがあり、その「完璧だが間違った」予測こそ締め直し対象。
-    /// 発火まで 25ms を切ったらもう動かさない（発火スレッドが既に
-    /// 起き上がっている）。
+    /// 発火まで 20ms を切ったらもう動かさない（発火スレッドが既に
+    /// 起き上がっている）。標本数の下限は実機の約 31fps に合わせた:
+    /// 確定（ヒット 100ms 前）から締切までに得られる新標本は 2 つが
+    /// せいぜいで、3 つ要求すると実測で 1196 件中 9 件しか発動
+    /// しなかった（v0.3.37）。
     /// </summary>
     private void TryRevise(Track track, double timeSeconds)
     {
-        if (track.Samples.Count < 4 || track.TotalSamples < track.ScheduledSamples + 3)
+        if (track.Samples.Count < 4 || track.TotalSamples < track.ScheduledSamples + 2)
         {
             return;
         }
-        if (track.ScheduledHit - timeSeconds < 0.025)
+        if (track.ScheduledHit - timeSeconds < 0.020)
         {
             return;
         }
