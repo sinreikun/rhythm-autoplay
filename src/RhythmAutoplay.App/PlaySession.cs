@@ -73,9 +73,17 @@ public sealed class PlaySession
         using var capturer = new WindowCapturer(hwnd);
         var detector = new FrameDetector(_profile);
         var trackers = new LaneNoteTracker[_profile.LaneCount];
+        // 出現ゲート: レーン上端から62%より下で初めて見えた塊は UI（判定文字・
+        // コンボ数字）とみなし発火しない。HYPNOSYNC では判定文字の中心が
+        // Y≈0.83〜0.90 に固定表示される（実測）。
+        double spawnGateY = _profile.Geometry.TopY
+            + 0.62 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
         for (int lane = 0; lane < trackers.Length; lane++)
         {
-            trackers[lane] = new LaneNoteTracker(_profile.JudgmentLineY, vanishingY: _profile.Geometry.VanishingY);
+            trackers[lane] = new LaneNoteTracker(
+                _profile.JudgmentLineY,
+                vanishingY: _profile.Geometry.VanishingY,
+                spawnGateY: spawnGateY);
         }
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
