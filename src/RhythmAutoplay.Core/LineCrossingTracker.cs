@@ -167,6 +167,26 @@ public sealed class LineCrossingTracker : ILaneTracker
         }
         Array.Copy(presence, _prevPresence, presence.Length);
 
+        // レーン発光の棄却（v0.3.44）: ヒット時にレーン全体が光ると、全ライン
+        // 同時に同色の在席が立ち上がる。本物のノーツは 1 フレームに 1 ライン
+        // しか横切らないため、同フレームに同種で 2 ライン以上の横断が立つ
+        // 場合は発光（と、それに付随する判定文字）とみなして全部捨てる。
+        // v0.3.43 の実測では鎖の 76% が横断 1 回で死んでおり、その大半が
+        // この発光由来のゴミ横断だった。
+        var kindsInFrame = new HashSet<NoteKind>();
+        var dupKinds = new HashSet<NoteKind>();
+        foreach ((int _, NoteKind kind) in crossings)
+        {
+            if (!kindsInFrame.Add(kind))
+            {
+                dupKinds.Add(kind);
+            }
+        }
+        if (dupKinds.Count > 0)
+        {
+            crossings.RemoveAll(c => dupKinds.Contains(c.Kind));
+        }
+
         double crossTime = timeSeconds - _frameDelta / 2;
         foreach ((int li, NoteKind kind) in crossings.OrderBy(c => c.Line))
         {
@@ -333,7 +353,10 @@ public sealed class LineCrossingTracker : ILaneTracker
             ch.FailReason = "resid";
             return;
         }
-        double tHit = (_judgmentW - a) / b;
+        // 在席の立ち上がりはノーツ下端がラインに触れる数 px 前から起きる
+        // ため、横断時刻は系統的に少し早く読める（v0.3.43 実測で中央値
+        // -4.2ms）。到達予測に +4ms の補正を入れる。
+        double tHit = (_judgmentW - a) / b + 0.004;
         if (!ch.Scheduled)
         {
             // 予約は原則 3 横断そろってから（v0.3.43）。2 点フィットは残差が
