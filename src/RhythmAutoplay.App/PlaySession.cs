@@ -89,7 +89,9 @@ public sealed class PlaySession
                 vanishingY: _profile.Geometry.VanishingY,
                 spawnGateY: spawnGateY,
                 scheduleHorizonSeconds: 1.2,
-                commitWindowSeconds: 0.15);
+                commitWindowSeconds: 0.15,
+                stitchWindowSeconds: 0.45,
+                stitchToleranceY: 0.09);
         }
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
