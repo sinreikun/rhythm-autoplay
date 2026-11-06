@@ -27,25 +27,44 @@ public sealed class FrameDetector
         int pyTop = (int)(geo.TopY * h);
         int pyJudge = (int)(_profile.JudgmentLineY * h);
 
+        // 先に矢印パスで帯の Y 範囲を知る。通常ノーツが矢印と同時に来ると
+        // 白帯の上に半透明で重なって見落としやすいため（マスター実機確認
+        // 2026-11-06）、レーンパスでは帯の内側だけ緩い分類と橋渡しを使う。
+        var bands = new List<(int TopPy, int BottomPy)>();
+        DetectArrows(frame, pyTop, pyJudge, results, bands);
         for (int lane = 0; lane < _profile.LaneCount; lane++)
         {
-            DetectLane(frame, lane, pyTop, pyJudge, results);
+            DetectLane(frame, lane, pyTop, pyJudge, bands, results);
         }
-        DetectArrows(frame, pyTop, pyJudge, results);
         return results;
     }
 
-    private void DetectLane(CapturedFrame frame, int lane, int pyTop, int pyJudge, List<NoteDetection> results)
+    private void DetectLane(
+        CapturedFrame frame, int lane, int pyTop, int pyJudge,
+        List<(int TopPy, int BottomPy)> bands, List<NoteDetection> results)
     {
         LaneGeometry geo = _profile.Geometry;
         int w = frame.Width, h = frame.Height;
 
+        bool InBand(int py)
+        {
+            foreach ((int top, int bottom) in bands)
+            {
+                if (py >= top - 4 && py <= bottom + 4)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         PixelColor runColor = PixelColor.None;
-        int runStart = 0, runLast = 0, gap = 0;
+        int runStart = 0, runLast = 0, gap = 0, coloredPx = 0;
+        bool bridged = false;
 
         void Flush()
         {
-            if (runColor == PixelColor.None || runLast - runStart < MinBlobPx)
+            if (runColor == PixelColor.None || coloredPx < MinBlobPx)
             {
                 return;
             }
@@ -53,7 +72,10 @@ public sealed class FrameDetector
             // ノーツは薄いバー（実測で判定ライン付近でも 16px 程度）で、
             // 接近した同色2連が1つの run に融合しても高さ 55px 程度に収まる。
             // 発光は 100px 以上になるため、上限は画面高の 8.5% に置く。
-            int maxBlobPx = Math.Max(40, (int)(frame.Height * 0.085));
+            // 矢印の帯を橋渡しした塊は帯の高さぶん長くなるため上限を緩める。
+            int maxBlobPx = bridged
+                ? Math.Max(40, (int)(frame.Height * 0.12))
+                : Math.Max(40, (int)(frame.Height * 0.085));
             if (runLast - runStart > maxBlobPx)
             {
                 return;
@@ -79,11 +101,18 @@ public sealed class FrameDetector
             int px = Clamp((int)(cx * w), 0, w - 1);
             var (r, g, b) = frame.PixelAt(px, py);
             PixelColor color = ColorClassifier.Classify(r, g, b);
+            bool inBand = bands.Count > 0 && InBand(py);
+            if (color == PixelColor.None && inBand)
+            {
+                // 白帯の上に薄まったノーツ色は、色相だけの緩い分類で拾う。
+                color = ColorClassifier.ClassifyLoose(r, g, b);
+            }
 
             if (color != PixelColor.None && color == runColor)
             {
                 runLast = py;
                 gap = 0;
+                coloredPx++;
             }
             else if (color != PixelColor.None)
             {
@@ -92,6 +121,15 @@ public sealed class FrameDetector
                 runStart = py;
                 runLast = py;
                 gap = 0;
+                coloredPx = 1;
+                bridged = false;
+            }
+            else if (runColor != PixelColor.None && inBand)
+            {
+                // 帯の白で run が切れないよう橋渡しする（帯の内側だけ）。
+                runLast = py;
+                gap = 0;
+                bridged = true;
             }
             else
             {
@@ -101,6 +139,8 @@ public sealed class FrameDetector
                     Flush();
                     runColor = PixelColor.None;
                     gap = 0;
+                    coloredPx = 0;
+                    bridged = false;
                 }
             }
         }
@@ -136,7 +176,9 @@ public sealed class FrameDetector
     /// <summary>矢印パスの候補行。方向推定に使う統計（印ピクセルの正規化重心 X とレーン中央部の印比率）を持つ。</summary>
     private readonly record struct ArrowRow(int Py, int X0, int X1, double MeanRx, double CenterMass);
 
-    private void DetectArrows(CapturedFrame frame, int pyTop, int pyJudge, List<NoteDetection> results)
+    private void DetectArrows(
+        CapturedFrame frame, int pyTop, int pyJudge,
+        List<NoteDetection> results, List<(int TopPy, int BottomPy)> bands)
     {
         LaneGeometry geo = _profile.Geometry;
         int w = frame.Width, h = frame.Height;
@@ -153,8 +195,8 @@ public sealed class FrameDetector
             int xTo = Clamp((int)(leftPx + widthPx), 0, w - 1);
 
             int bestStart = -1, bestEnd = -1, curStart = -1, curGap = 0;
-            double rxSum = 0;
-            int markCount = 0, centerCount = 0;
+            double rxSum = 0, rxSumWhite = 0;
+            int markCount = 0, centerCount = 0, whiteCount = 0, centerWhite = 0;
             for (int px = xFrom; px <= xTo; px += 2)
             {
                 if (IsMark(frame, px, py))
@@ -163,9 +205,19 @@ public sealed class FrameDetector
                     rxSum += rx;
                     markCount++;
                     double laneFrac = (rx * _profile.LaneCount) % 1.0;
-                    if (Math.Abs(laneFrac - 0.5) < 0.25)
+                    bool isCenter = Math.Abs(laneFrac - 0.5) < 0.25;
+                    if (isCenter)
                     {
                         centerCount++;
+                    }
+                    if (IsWhiteMark(frame, px, py))
+                    {
+                        rxSumWhite += rx;
+                        whiteCount++;
+                        if (isCenter)
+                        {
+                            centerWhite++;
+                        }
                     }
                     if (curStart < 0)
                     {
@@ -194,8 +246,12 @@ public sealed class FrameDetector
             double laneWidthPx = geo.LaneWidthAt(_profile.LaneCount, y) * w;
             if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0)
             {
-                candidateRows.Add(new ArrowRow(
-                    py, bestStart, bestEnd, rxSum / markCount, centerCount / (double)markCount));
+                // 方向推定の統計は白印だけで取る（白印が無い行は全印にフォールバック）。
+                double meanRx = whiteCount > 0 ? rxSumWhite / whiteCount : rxSum / markCount;
+                double centerMass = whiteCount > 0
+                    ? centerWhite / (double)whiteCount
+                    : centerCount / (double)markCount;
+                candidateRows.Add(new ArrowRow(py, bestStart, bestEnd, meanRx, centerMass));
             }
         }
 
@@ -244,6 +300,7 @@ public sealed class FrameDetector
             ArrowDirection? direction = EstimateDirection(candidateRows, i, patternEnd);
             int lane = NearestLane(geo, centerX, centerY);
             results.Add(new NoteDetection(lane, NoteKind.Arrow, direction, centerX, centerY, frame.TimeSeconds));
+            bands.Add((candidateRows[i].Py, candidateRows[j].Py));
             i = j + 1;
         }
     }
@@ -336,9 +393,18 @@ public sealed class FrameDetector
         {
             return true;
         }
-        // 矢印は白〜淡色で描かれる。HYPNOSYNC の白シェブロンは実測で純白
-        // (255,255,255)〜灰色 (v≈0.49, s=0)。レーン面 (v≈0.16) と区別できる
-        // v>0.45 の低彩度を印として拾う。
+        return IsWhiteMark(frame, px, py);
+    }
+
+    /// <summary>
+    /// 白〜淡色の印か。HYPNOSYNC の白シェブロンは実測で純白 (255,255,255)〜
+    /// 灰色 (v≈0.49, s=0)。レーン面 (v≈0.16) と区別できる v&gt;0.45 の低彩度。
+    /// 方向推定の統計はこちらの印だけで取る: 通常ノーツの鮮やかな色まで
+    /// 含めると、矢印と同時に来た通常ノーツが重心を歪めるため（v0.3.6）。
+    /// </summary>
+    private static bool IsWhiteMark(CapturedFrame frame, int px, int py)
+    {
+        var (r, g, b) = frame.PixelAt(px, py);
         var (_, s, v) = ColorClassifier.RgbToHsv(r, g, b);
         return v > 0.45 && s < 0.35;
     }
