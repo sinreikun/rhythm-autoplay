@@ -23,6 +23,7 @@ public sealed class MainForm : Form
     private readonly Button _dryButton = new();
     private readonly Button _stopButton = new();
     private readonly Button _snapshotButton = new();
+    private readonly Button _resetGeometryButton = new();
     private readonly CheckBox _overlayCheck = new();
     private readonly CheckBox _editCheck = new();
     private readonly CheckBox _topmostCheck = new();
@@ -152,6 +153,12 @@ public sealed class MainForm : Form
             AppendLog(_editCheck.Checked ? "範囲調整モード: オーバレイのハンドルをドラッグしてください。" : "範囲調整モードを終了しました。");
         };
         Controls.Add(_editCheck);
+
+        _resetGeometryButton.Text = "形状を初期値に戻す";
+        _resetGeometryButton.Location = new Point(216, y - 3);
+        _resetGeometryButton.Size = new Size(130, 24);
+        _resetGeometryButton.Click += OnResetGeometryClicked;
+        Controls.Add(_resetGeometryButton);
         y += 26;
         _topmostCheck.Text = "このウィンドウを常に手前に";
         _topmostCheck.Location = new Point(10, y);
@@ -316,6 +323,15 @@ public sealed class MainForm : Form
         _playButton.Enabled = !running;
         _dryButton.Enabled = !running;
         _stopButton.Enabled = running;
+    }
+
+    private void OnResetGeometryClicked(object? sender, EventArgs e)
+    {
+        _settings.GeometryOverrides.Remove(_baseProfile.GameId);
+        _effectiveProfile = _baseProfile;
+        _overlay.Invalidate();
+        SaveSettingsSoon();
+        AppendLog("形状（認識範囲・判定ライン）をプロファイル初期値に戻しました。");
     }
 
     private void OnGeometryChanged(GameProfile updated)
