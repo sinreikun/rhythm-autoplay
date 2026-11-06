@@ -212,6 +212,40 @@ public class LaneNoteTrackerTests
     }
 
     [Fact]
+    public void FastNoteBornLow_StillSchedules()
+    {
+        // 高速譜面では本物のノーツの初検出が画面下部（Y≈0.80）になる。
+        // 緩いゲート (0.88) の内側で生まれ、実際に下っていれば発火する。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.94, spawnGateY: 0.88, scheduleHorizonSeconds: 1.2);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 10; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.80 + 1.2 * t;
+            var det = new NoteDetection(0, NoteKind.Blue, null, 0.4, y, t);
+            scheduledCount += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(1, scheduledCount);
+    }
+
+    [Fact]
+    public void StaticBlob_NeverSchedules()
+    {
+        // 判定文字のような静止した塊は、ゲートの内側にあっても発火しない。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.94, spawnGateY: 0.88, scheduleHorizonSeconds: 1.2);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 30; i++)
+        {
+            double t = i / 60.0;
+            var det = new NoteDetection(1, NoteKind.Yellow, null, 0.5, 0.77, t);
+            scheduledCount += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
     public void ArrowWaitsForDirection_ThenSchedulesWithModalDirection()
     {
         var tracker = new LaneNoteTracker(judgmentY: 0.94);
