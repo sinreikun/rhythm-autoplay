@@ -182,3 +182,61 @@ public class LaneNoteTrackerTests
         Assert.Equal(2, scheduledCount);
     }
 }
+
+public class ProjectivePredictorTests
+{
+    // 等速で近づくノーツは画面上では加速して見える。
+    // y(t) = vy + 1 / (w0 - k t) という射影運動で合成する。
+    private static List<(double, double)> ProjectiveSamples(double vy, double w0, double k, double tEnd)
+    {
+        var samples = new List<(double, double)>();
+        for (double t = 0; t <= tEnd; t += 0.05)
+        {
+            samples.Add((t, vy + 1.0 / (w0 - k * t)));
+        }
+        return samples;
+    }
+
+    [Fact]
+    public void Projective_PredictsTrueHitTime()
+    {
+        const double vy = 0.12, w0 = 8.0, k = 6.0, target = 0.94;
+        var samples = ProjectiveSamples(vy, w0, k, 0.5);
+        // 目標到達: w = 1/(0.94-0.12) = 1.2195 -> t = (8 - 1.2195)/6 = 1.1301
+        bool ok = HitTimePredictor.TryPredictHitTimeProjective(samples, target, vy, out double hitTime, out double residual);
+        Assert.True(ok);
+        Assert.Equal(1.1301, hitTime, precision: 2);
+        Assert.True(residual < 1e-6);
+    }
+
+    [Fact]
+    public void Linear_OnProjectiveMotion_PredictsTooLate()
+    {
+        // v0.2.0 の不具合の再現: 直線フィットは到達を遅く見積もりすぎる。
+        const double vy = 0.12, w0 = 8.0, k = 6.0, target = 0.94;
+        var samples = ProjectiveSamples(vy, w0, k, 0.5);
+        Assert.True(HitTimePredictor.TryPredictHitTime(samples, target, out double linearHit, out _));
+        Assert.True(linearHit > 1.1301 + 0.15, $"linear={linearHit:F3} は真値より大幅に遅いはず");
+    }
+
+    [Fact]
+    public void Tracker_WithVanishingY_SchedulesProjectiveNote()
+    {
+        var tracker = new LaneNoteTracker(judgmentY: 0.94, vanishingY: 0.12);
+        int scheduled = 0;
+        double hit = 0;
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.12 + 1.0 / (8.0 - 6.0 * t);
+            var det = new NoteDetection(0, NoteKind.Red, null, 0.4, y, t);
+            foreach (var (_, _, tHit) in tracker.Observe(t, new[] { det }))
+            {
+                scheduled++;
+                hit = tHit;
+            }
+        }
+        Assert.Equal(1, scheduled);
+        Assert.Equal(1.1301, hit, precision: 2);
+    }
+}
