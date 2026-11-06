@@ -30,6 +30,32 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     return playSession.Run();
 }
 
+if (args.Length > 0 && args[0].Equals("snapshot", StringComparison.OrdinalIgnoreCase))
+{
+    int snapSeconds = 8;
+    int intervalMs = 500;
+    string? outDir = null;
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
+        {
+            snapSeconds = s;
+        }
+        if (args[i] == "--interval-ms" && int.TryParse(args[i + 1], out int iv))
+        {
+            intervalMs = iv;
+        }
+        if (args[i] == "--out")
+        {
+            outDir = args[i + 1];
+        }
+    }
+    var snapshotSession = new SnapshotSession(
+        GameProfile.HypnosyncDefault(),
+        new SnapshotOptions { Seconds = snapSeconds, IntervalMilliseconds = intervalMs, OutDirectory = outDir });
+    return snapshotSession.Run();
+}
+
 GameProfile profile = GameProfile.HypnosyncDefault();
 
 Console.WriteLine("RhythmAutoplay (body)");
