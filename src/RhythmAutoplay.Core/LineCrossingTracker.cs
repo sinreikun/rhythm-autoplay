@@ -15,7 +15,14 @@ namespace RhythmAutoplay.Core;
 public sealed class LineCrossingTracker : ILaneTracker
 {
     /// <summary>横断ラインの Y（画面比率）。検出器のライン走査と共有する。</summary>
-    public static readonly double[] LineYs = { 0.80, 0.845, 0.89 };
+    /// <remarks>
+    /// 4 本目の 0.915 は救済ライン（v0.3.47、マスター選択）。上 3 本を矢印の
+    /// 波や過密の遮蔽で取り逃したノーツを、判定の約 53ms 手前で拾い直す。
+    /// {0.89, 0.915} の 2 横断だけでも予約でき、外挿が短い分だけ誤差も
+    /// 小さい。判定文字とレーン発光の帯域に最も近いラインなので、ゴミ鎖
+    /// の増加は実測で監視する（同フレーム多ライン棄却と偏差ゲートが盾）。
+    /// </remarks>
+    public static readonly double[] LineYs = { 0.80, 0.845, 0.89, 0.915 };
 
     // 横断観測の実効レート（w/秒、v=0.39 空間）。塊の下端が従う 2.13 では
     // なく、在席の立ち上がりという観測量に固有の値で、実測の鎖内ばらつき
