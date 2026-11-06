@@ -18,9 +18,11 @@ public sealed class PlayOptions
     public double InjectStrayMilliseconds { get; init; }
     /// <summary>
     /// 遅延確定の窓 [ms]: 予測ヒットまでこの時間を切るまで予約を確定しない。
-    /// 小さいほど標本が溜まって予測が締まるが、確定が遅れる。既定 150。
+    /// 小さいほど標本が溜まって予測が締まるが、確定が遅れる。既定 100
+    /// （Floating 実測スイープ: 150→CRINGE 125〜145 / 100→111〜140 で
+    /// グレード最良 / 70→174。飢餓救済ありでも 100 が最適だった）。
     /// </summary>
-    public double CommitWindowMilliseconds { get; init; } = 150;
+    public double CommitWindowMilliseconds { get; init; } = 100;
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>

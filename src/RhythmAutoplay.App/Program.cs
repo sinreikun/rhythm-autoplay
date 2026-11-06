@@ -28,7 +28,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     bool dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
     double offsetMs = 0;
     double strayMs = 0;
-    double commitMs = 150;
+    double commitMs = 100;
     int seconds = 0;
     string engine = "track";
     for (int i = 1; i < args.Length - 1; i++)
