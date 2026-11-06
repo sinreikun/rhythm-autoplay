@@ -52,8 +52,12 @@ public static class ColorClassifier
     public static PixelColor Classify(byte r, byte g, byte b)
     {
         var (h, s, v) = RgbToHsv(r, g, b);
-        // 暗い色・無彩色は背景やレーン面として捨てる。
-        if (v < 0.25 || s < 0.35)
+        // 暗い色・無彩色は背景やレーン面として捨てる。床は実測で決める:
+        // HYPNOSYNC のコンボ数字は半透明の暗い字形で、実測 RGB(65,43,54)
+        // （v≈0.25, s≈0.35）が旧床の境界上で点滅し赤と誤認された（v0.3.1 実機）。
+        // 本物のノーツは s≥0.8, v≥0.66 の鮮やかな色なので、床を v=0.30 / s=0.45
+        // まで上げても取りこぼさない。
+        if (v < 0.30 || s < 0.45)
         {
             return PixelColor.None;
         }
