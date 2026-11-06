@@ -18,8 +18,12 @@ public sealed record GameProfile(
 {
     /// <summary>
     /// HYPNOSYNC の既定プロファイル。
-    /// キー配置はコミュニティで実績のある配置（赤=D F J K / 青=E R U I / 方向=S L V N）。
-    /// ゲーム内設定（Settings → View Keybinds → Edit Keybinds）をこの配置に合わせる前提。
+    /// キー配置はゲーム側のデフォルトそのまま（2026-11-06 にマスター提供の
+    /// EDIT KEYBINDS 画面で実測）: 上段ボタン T1–T4（青）= R T Y U、
+    /// 下段ボタン B1–B4（ピンク）= F G H J、レバー = W（上）A（左）S（下）D（右）。
+    /// 利用者はゲーム内設定を変えなくてよい。
+    /// 色と段の対応（青ノーツ→T段、赤/ピンクノーツ→B段）はボタンの色からの
+    /// 推定で、v0.2 の実機検証で確定させる。
     /// </summary>
     public static GameProfile HypnosyncDefault() => new(
         GameId: "hypnosync",
@@ -28,17 +32,17 @@ public sealed record GameProfile(
         JudgmentLineY: 0.94,
         Lanes: new[]
         {
-            new LaneBinding(0, "D", "E"),
-            new LaneBinding(1, "F", "R"),
-            new LaneBinding(2, "J", "U"),
-            new LaneBinding(3, "K", "I"),
+            new LaneBinding(0, "F", "R"),
+            new LaneBinding(1, "G", "T"),
+            new LaneBinding(2, "H", "Y"),
+            new LaneBinding(3, "J", "U"),
         },
         ArrowKeys: new Dictionary<ArrowDirection, string>
         {
-            [ArrowDirection.Left] = "S",
-            [ArrowDirection.Right] = "L",
-            [ArrowDirection.Down] = "V",
-            [ArrowDirection.Up] = "N",
+            [ArrowDirection.Left] = "A",
+            [ArrowDirection.Right] = "D",
+            [ArrowDirection.Down] = "S",
+            [ArrowDirection.Up] = "W",
         },
         TapHoldMilliseconds: 40);
 }
