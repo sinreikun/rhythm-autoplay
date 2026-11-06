@@ -61,6 +61,27 @@ public static class ColorClassifier
         {
             return PixelColor.None;
         }
+        return FromHue(h);
+    }
+
+    /// <summary>
+    /// 緩い分類: 矢印ノーツの白帯の上に半透明で重なった通常ノーツを読むため。
+    /// 白に薄まると彩度が落ちて通常の床（s≥0.45）を割るため、明るく
+    /// （v&gt;0.55）色味が残る（s&gt;0.15）ピクセルは色相だけで判定する。
+    /// 帯の内側という文脈でのみ使う前提で、単独では使わない。
+    /// </summary>
+    public static PixelColor ClassifyLoose(byte r, byte g, byte b)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        if (v < 0.55 || s < 0.15)
+        {
+            return PixelColor.None;
+        }
+        return FromHue(h);
+    }
+
+    private static PixelColor FromHue(double h)
+    {
         if (h < 0.045 || h >= 0.90)
         {
             return PixelColor.Red; // 赤〜ピンク（HYPNOSYNC の下段色を含む）
