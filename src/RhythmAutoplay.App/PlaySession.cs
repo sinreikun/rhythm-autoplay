@@ -10,6 +10,12 @@ public sealed class PlayOptions
     public bool DryRun { get; init; }
     /// <summary>全ヒットの発火時刻に加えるオフセット [ms]。正で遅く、負で早く。</summary>
     public double OffsetMilliseconds { get; init; }
+    /// <summary>
+    /// 診断用: 0 より大きい場合、各ノーツ（矢印を除く）の発火のこの ms 数だけ前に、
+    /// 隣レーンの間違ったキーを 1 回落とす。「判定ウィンドウ内の誤キーがノーツを
+    /// 消費するか」を実測するための実験機能で、通常は 0 (無効)。
+    /// </summary>
+    public double InjectStrayMilliseconds { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -317,9 +323,19 @@ public sealed class PlaySession
                         continue;
                     }
                     recentSchedules.Add((signature, sn.THit, now));
+                    var enqueued = new List<ScheduledInput>(events);
+                    if (_options.InjectStrayMilliseconds > 0 && sn.Kind != NoteKind.Arrow)
+                    {
+                        // 診断: 本発火の少し前に隣レーンの誤キーを落とす。
+                        // 重複抑制の署名には含めない（実験が本線を壊さない）。
+                        var strayNote = new NoteDetection(
+                            (group.Key + 1) % _profile.Lanes.Count, NoteKind.Red, null, 0, 0, now);
+                        double strayAt = sn.THit + offsetSeconds - _options.InjectStrayMilliseconds / 1000.0;
+                        enqueued.AddRange(KeyPlanBuilder.BuildTap(_profile, strayNote, strayAt));
+                    }
                     lock (schedGate)
                     {
-                        foreach (ScheduledInput ev in events)
+                        foreach (ScheduledInput ev in enqueued)
                         {
                             scheduler.Enqueue(ev);
                         }
