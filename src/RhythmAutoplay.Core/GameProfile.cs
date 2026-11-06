@@ -29,7 +29,7 @@ public sealed record GameProfile(
         GameId: "hypnosync",
         WindowProcessName: "HYPNOSYNC",
         LaneCount: 4,
-        JudgmentLineY: 0.94,
+        JudgmentLineY: 0.941,
         Lanes: new[]
         {
             new LaneBinding(0, "F", "R"),
