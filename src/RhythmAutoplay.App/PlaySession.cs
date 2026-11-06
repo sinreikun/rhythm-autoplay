@@ -23,6 +23,13 @@ public sealed class PlayOptions
     /// グレード最良 / 70→174。飢餓救済ありでも 100 が最適だった）。
     /// </summary>
     public double CommitWindowMilliseconds { get; init; } = 100;
+    /// <summary>
+    /// タップの保持時間上書き [ms]（v0.3.35、実験用）: 0 より大きい場合に
+    /// プロファイルの TapHoldMilliseconds を差し替える。ゲーム側の入力
+    /// ポーリング（曲中は実測 ~30fps 級）が 40ms のタップを取りこぼす
+    /// 仮説の検証用。通常は 0（プロファイル値 40ms）。
+    /// </summary>
+    public double HoldMilliseconds { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -55,8 +62,10 @@ public sealed class PlaySession
 
     public PlaySession(GameProfile profile, PlayOptions options, Action<string>? log = null)
     {
-        _profile = profile;
         _options = options;
+        _profile = options.HoldMilliseconds > 0
+            ? profile with { TapHoldMilliseconds = options.HoldMilliseconds }
+            : profile;
         _log = log;
     }
 
@@ -134,7 +143,7 @@ public sealed class PlaySession
             _cancelled = true;
         };
 
-        Log($"設定: offset={_options.OffsetMilliseconds}ms commit={_options.CommitWindowMilliseconds}ms stray={_options.InjectStrayMilliseconds}ms engine={_options.Engine}");
+        Log($"設定: offset={_options.OffsetMilliseconds}ms commit={_options.CommitWindowMilliseconds}ms stray={_options.InjectStrayMilliseconds}ms engine={_options.Engine} hold={_profile.TapHoldMilliseconds}ms");
         Log(_options.DryRun
             ? "DRY-RUN で開始します（入力は送りません）。F9 で終了します。"
             : "実プレイを開始します。F9 で終了します。");
