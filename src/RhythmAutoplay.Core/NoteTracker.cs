@@ -11,12 +11,32 @@ public sealed class LaneNoteTracker
     private sealed class Track
     {
         public required NoteKind Kind;
-        public ArrowDirection? Direction;
         public List<(double Time, double Y)> Samples { get; } = new();
         public bool Scheduled { get; set; }
         public double LastSeenTime { get; set; }
         public double LastY { get; set; }
         public double FirstY { get; set; }
+
+        /// <summary>矢印の方向はフレームごとに推定が揺れる（模様が流れるアニメーション）ため、票を貯めて多数決で決める。</summary>
+        public Dictionary<ArrowDirection, int> DirectionVotes { get; } = new();
+
+        public ArrowDirection? ModalDirection
+        {
+            get
+            {
+                ArrowDirection? best = null;
+                int bestCount = 0;
+                foreach ((ArrowDirection dir, int count) in DirectionVotes)
+                {
+                    if (count > bestCount)
+                    {
+                        bestCount = count;
+                        best = dir;
+                    }
+                }
+                return best;
+            }
+        }
     }
 
     private readonly List<Track> _tracks = new();
@@ -58,35 +78,61 @@ public sealed class LaneNoteTracker
         var ready = new List<(NoteKind, ArrowDirection?, double)>();
         var matched = new HashSet<Track>();
 
-        foreach (NoteDetection det in laneDetections)
+        // 対応付けは「前回位置との近さ」ではなく、各軌跡の速度から予測した
+        // 今回位置との近さで行い、候補ペア全体を近い順に貪欲に割り当てる。
+        // 同色ノーツが接近して並ぶと、前回位置基準では後続ノーツの検出が
+        // 先行軌跡に奪われて両方壊れる（実機で見落としの主因と判断）。
+        var detList = laneDetections.ToList();
+        var pairs = new List<(double AbsGap, NoteDetection Det, Track Track)>();
+        foreach (NoteDetection det in detList)
         {
-            Track? best = null;
-            double bestGap = double.MaxValue;
             foreach (Track track in _tracks)
             {
-                if (matched.Contains(track) || track.Kind != det.Kind)
+                if (track.Kind != det.Kind)
                 {
                     continue;
                 }
-                // ノーツは基本的に下方向（Y 増）へだけ動く。若干の上振れは測定誤差として許す。
-                double gap = det.Y - track.LastY;
-                if (gap < -0.02 || gap > _matchToleranceY)
+                double expectedY = track.LastY;
+                if (track.Samples.Count >= 2)
+                {
+                    (double t1, double y1) = track.Samples[^2];
+                    (double t2, double y2) = track.Samples[^1];
+                    if (t2 > t1)
+                    {
+                        expectedY = y2 + (y2 - y1) / (t2 - t1) * (timeSeconds - t2);
+                    }
+                }
+                double gap = det.Y - expectedY;
+                if (gap < -_matchToleranceY / 2 || gap > _matchToleranceY * 0.75)
                 {
                     continue;
                 }
-                if (Math.Abs(gap) < bestGap)
-                {
-                    bestGap = Math.Abs(gap);
-                    best = track;
-                }
+                pairs.Add((Math.Abs(gap), det, track));
             }
+        }
+        pairs.Sort((a, b) => a.AbsGap.CompareTo(b.AbsGap));
+        var assignment = new Dictionary<NoteDetection, Track>();
+        var usedDets = new HashSet<NoteDetection>();
+        foreach ((double _, NoteDetection det, Track track) in pairs)
+        {
+            if (usedDets.Contains(det) || matched.Contains(track))
+            {
+                continue;
+            }
+            assignment[det] = track;
+            usedDets.Add(det);
+            matched.Add(track);
+        }
+
+        foreach (NoteDetection det in detList)
+        {
+            Track? best = assignment.GetValueOrDefault(det);
 
             if (best is null)
             {
                 best = new Track
                 {
                     Kind = det.Kind,
-                    Direction = det.Direction,
                     LastSeenTime = timeSeconds,
                     LastY = det.Y,
                     FirstY = det.Y,
@@ -101,9 +147,9 @@ public sealed class LaneNoteTracker
             }
             best.LastY = det.Y;
             best.LastSeenTime = timeSeconds;
-            if (det.Direction is not null)
+            if (det.Direction is { } voted)
             {
-                best.Direction = det.Direction;
+                best.DirectionVotes[voted] = best.DirectionVotes.GetValueOrDefault(voted) + 1;
             }
             matched.Add(best);
 
@@ -119,14 +165,20 @@ public sealed class LaneNoteTracker
                 // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
                 // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
                 bool bornAboveGate = double.IsNaN(_spawnGateY) || best.FirstY <= _spawnGateY;
+                // 矢印は方向が決まるまで発火しない。出現直後は模様が小さく
+                // 推定が付かないことが多く、方向なしで予約すると入力できないまま
+                // 終わってしまうため、票が入るまで予約を保留する。
+                ArrowDirection? modal = best.ModalDirection;
+                bool directionReady = best.Kind != NoteKind.Arrow || modal is not null;
                 if (predicted
                     && bornAboveGate
+                    && directionReady
                     && residual <= _maxResidual
                     && hitTime >= timeSeconds - 0.02
                     && hitTime <= timeSeconds + _scheduleHorizonSeconds)
                 {
                     best.Scheduled = true;
-                    ready.Add((best.Kind, best.Direction, hitTime));
+                    ready.Add((best.Kind, modal, hitTime));
                 }
             }
         }
