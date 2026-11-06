@@ -49,6 +49,15 @@ public sealed class LaneNoteTracker : ILaneTracker
         /// <summary>最後の死に際試行（確定窓バイパス）が落ちたゲート名。診断用（v0.3.27）。</summary>
         public string LastFailBypass { get; set; } = "none";
 
+        /// <summary>
+        /// 最も残差の小さかった射影フィット直線（w 空間）の保存（v0.3.28）。
+        /// 判定帯近くでは標本が荒れて現在の窓の適合が残差ゲートを超えるが、
+        /// 過去の最良直線は壊れていないことが多い（v0.3.27 の実測診断:
+        /// ゴーストの 64% が resid、21% が nofit で死亡）。
+        /// </summary>
+        public (double Velocity, double Intercept)? BestLine { get; set; }
+        public double BestLineResidual { get; set; } = double.PositiveInfinity;
+
         /// <summary>矢印の方向はフレームごとに推定が揺れる（模様が流れるアニメーション）ため、票を貯めて多数決で決める。</summary>
         public Dictionary<ArrowDirection, int> DirectionVotes { get; } = new();
 
@@ -312,6 +321,17 @@ public sealed class LaneNoteTracker : ILaneTracker
         {
             track.BestResidual = residual;
         }
+        // 最良フィットの保存（v0.3.28）: 標本が十分溜まった時点の直線だけを
+        // 残す（出現直後の小標本フィットは残差が偶然小さくても端バイアスを
+        // 含むため、窓が 8 標本以上あるときに限る）。
+        if (predicted && !double.IsNaN(_vanishingY) && track.Samples.Count >= 8
+            && HitTimePredictor.TryFitProjectiveLine(track.Samples, _vanishingY,
+                out double lv, out double li, out double lres)
+            && lres < track.BestLineResidual)
+        {
+            track.BestLine = (lv, li);
+            track.BestLineResidual = lres;
+        }
         // 出現ゲート: 本物のノーツはレーン上端から現れて落下する。
         // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
         // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
@@ -350,6 +370,29 @@ public sealed class LaneNoteTracker : ILaneTracker
             hitTime < timeSeconds - pastGraceSeconds ? "past" :
             hitTime > timeSeconds + _scheduleHorizonSeconds ? "horizon" :
             "ok";
+        // 最良直線へのフォールバック（v0.3.28）: 現在の窓の適合だけが理由で
+        // 落ちる場合に限り、保存した最良直線で到達時刻を組み直し、その時刻で
+        // 確定窓・過去猶予・ホライズンを判定し直す。他のゲート落ち（出現位置・
+        // 動き・方向）は直線の問題ではないので救済しない。
+        if ((fail == "resid" || fail == "nofit")
+            && track.BestLine is { } bl
+            && track.BestLineResidual <= _maxResidual
+            && bornAboveGate && moved && directionReady
+            && bl.Velocity < -1e-9
+            && !double.IsNaN(_vanishingY)
+            && _judgmentY - _vanishingY > 1e-6)
+        {
+            double fbHit = (1.0 / (_judgmentY - _vanishingY) - bl.Intercept) / bl.Velocity;
+            bool fbCommit = bypassCommit || fbHit - timeSeconds <= commitThreshold;
+            if (fbCommit
+                && fbHit >= timeSeconds - pastGraceSeconds
+                && fbHit <= timeSeconds + _scheduleHorizonSeconds)
+            {
+                hitTime = fbHit;
+                residual = track.BestLineResidual;
+                fail = "ok";
+            }
+        }
         if (bypassCommit)
         {
             track.LastFailBypass = fail;

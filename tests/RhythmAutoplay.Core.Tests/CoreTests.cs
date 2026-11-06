@@ -212,6 +212,83 @@ public class LaneNoteTrackerTests
     }
 
     [Fact]
+    public void BestLineFallback_PollutedLateSamples_StillSchedules()
+    {
+        // 判定帯近くで検出位置がフレームごとに荒れると（判定エフェクトの
+        // 重なりで blob の下端が揺れる実測パターン）、直近 12 標本の窓は
+        // 残差ゲートを超えて現在の適合では予約できない。過去の最良直線
+        // （清浄な期間の適合）が保存されていれば、その直線の予測で
+        // 予約できる（v0.3.28、v0.3.27 の実測診断: ゴーストの 64% が
+        // resid 死・21% が nofit 死だったことへの対策）。
+        // 荒れオフセットは固定列（乱数シード 1000 の一様 ±0.03 から生成し、
+        // フォールバック無効化時は予約が消えることを差分確認済み）。
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.941, vanishingY: 0.39, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        double scheduledHit = 0;
+        double scheduledAt = 0;
+        var ragged = new Dictionary<int, double>
+        {
+            { 14, 0.0166 }, { 15, 0.0102 }, { 16, -0.0241 }, { 17, -0.0088 },
+            { 18, -0.0019 }, { 19, 0.0021 }, { 20, 0.0287 },
+        };
+        // y(t) = 0.39 + 1/(3.2 - 1.6 t): 判定 w=1/(0.941-0.39)=1.8149 より
+        // 到達 t = (3.2 - 1.8149) / 1.6 = 0.8657。
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = i / 30.0;
+            NoteDetection[] dets;
+            if (t <= 0.6833)
+            {
+                double y = 0.39 + 1.0 / (3.2 - 1.6 * t) + ragged.GetValueOrDefault(i);
+                dets = new[] { new NoteDetection(0, NoteKind.Red, null, 0.4, y, t) };
+            }
+            else
+            {
+                dets = Array.Empty<NoteDetection>();
+            }
+            foreach (var note in tracker.Observe(t, dets))
+            {
+                scheduledCount++;
+                scheduledHit = note.THit;
+                scheduledAt = t;
+            }
+        }
+        Assert.Equal(1, scheduledCount);
+        Assert.Equal(0.8657, scheduledHit, precision: 2);
+        Assert.True(scheduledAt < scheduledHit);
+    }
+
+    [Fact]
+    public void BestLineFallback_NeverCleanTrack_DoesNotSchedule()
+    {
+        // 最初から最後まで標本が荒れている軌跡は、最良直線の残差自体が
+        // ゲートを超えているため、フォールバックでも予約されない。
+        // （残差ゲートを 0.0025 に締め、±0.006 の交代ジッタを与える:
+        // 最良直線の残差は約 0.006 で、ゲート超えのまま保存される。）
+        var tracker = new LaneNoteTracker(
+            judgmentY: 0.941, vanishingY: 0.39, commitWindowSeconds: 0.10,
+            maxResidual: 0.0025);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 80; i++)
+        {
+            double t = i / 60.0;
+            var dets = Array.Empty<NoteDetection>();
+            if (t <= 0.6833)
+            {
+                double jitter = (i % 2 == 0) ? 0.006 : -0.006;
+                double y = 0.39 + 1.0 / (3.2 - 1.6 * t) + jitter;
+                dets = new[] { new NoteDetection(0, NoteKind.Red, null, 0.4, y, t) };
+            }
+            foreach (var _ in tracker.Observe(t, dets))
+            {
+                scheduledCount++;
+            }
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
     public void SpawnGate_NoteBornBelowGate_NeverSchedules()
     {
         // 判定文字やコンボ数字のような UI は画面下部にいきなり現れる。

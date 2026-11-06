@@ -158,4 +158,75 @@ public static class HitTimePredictor
         residualRms = Math.Sqrt(sumSq / n);
         return true;
     }
+
+    /// <summary>
+    /// 射影フィットの直線そのもの（w 空間: w = intercept + velocity * t）を返す。
+    /// 到達時刻は (1/(targetY - vanishingY) - intercept) / velocity で得られる。
+    /// 追跡側が「最も良く合った瞬間の直線」を保存しておき、判定帯近くで
+    /// 標本が荒れて現在の窓の適合が崩れても、その直線で予測を継続するために使う。
+    /// 残差は TryPredictHitTimeProjective と同じく y 座標系で測る。
+    /// </summary>
+    public static bool TryFitProjectiveLine(
+        IReadOnlyList<(double Time, double Y)> samples,
+        double vanishingY,
+        out double velocity,
+        out double intercept,
+        out double residualRms)
+    {
+        velocity = 0;
+        intercept = 0;
+        residualRms = double.PositiveInfinity;
+        if (samples.Count < MinSamples)
+        {
+            return false;
+        }
+
+        int n = samples.Count;
+        var w = new double[n];
+        double sumT = 0, sumW = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double gap = samples[i].Y - vanishingY;
+            if (gap <= 1e-6)
+            {
+                return false;
+            }
+            w[i] = 1.0 / gap;
+            sumT += samples[i].Time;
+            sumW += w[i];
+        }
+        double meanT = sumT / n, meanW = sumW / n;
+        double sTT = 0, sTW = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double dt = samples[i].Time - meanT;
+            sTT += dt * dt;
+            sTW += dt * (w[i] - meanW);
+        }
+        if (sTT <= 0)
+        {
+            return false;
+        }
+        velocity = sTW / sTT;
+        if (Math.Abs(velocity) < 1e-9)
+        {
+            return false;
+        }
+        intercept = meanW - velocity * meanT;
+
+        double sumSq = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double wFit = intercept + velocity * samples[i].Time;
+            if (Math.Abs(wFit) < 1e-9)
+            {
+                return false;
+            }
+            double yFit = vanishingY + 1.0 / wFit;
+            double d = samples[i].Y - yFit;
+            sumSq += d * d;
+        }
+        residualRms = Math.Sqrt(sumSq / n);
+        return true;
+    }
 }
