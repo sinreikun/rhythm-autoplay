@@ -65,8 +65,11 @@ public sealed class FrameDetector
             {
                 double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
                 double halfSpread = geo.LaneWidthAt(_profile.LaneCount, lineY) * w * 0.30;
-                PixelColor found = PixelColor.None;
-                for (int dpy = -2; dpy <= 2 && found == PixelColor.None; dpy += 2)
+                // 在席には同色 2 標本以上の証拠を要求する（v0.3.43）。
+                // 1 標本でも在席にすると単画素のちらつきが横断イベントに
+                // なり、1 横断だけの鎖が大量に生まれた（v0.3.42 実測）。
+                var counts = new int[6];
+                for (int dpy = -2; dpy <= 2; dpy += 2)
                 {
                     int py = Math.Clamp(pyC + dpy, 0, h - 1);
                     foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
@@ -76,9 +79,17 @@ public sealed class FrameDetector
                         PixelColor c = ColorClassifier.Classify(r, g, b);
                         if (c != PixelColor.None)
                         {
-                            found = c;
-                            break;
+                            counts[(int)c]++;
                         }
+                    }
+                }
+                PixelColor found = PixelColor.None;
+                for (int k = 1; k < counts.Length; k++)
+                {
+                    if (counts[k] >= 2)
+                    {
+                        found = (PixelColor)k;
+                        break;
                     }
                 }
                 if (found != PixelColor.None)

@@ -173,6 +173,16 @@ public sealed class LineCrossingTracker : ILaneTracker
             HandleCrossing(crossTime, li, kind, scheduled);
         }
 
+        // 3 本目の横断が来ない鎖の落下傘予約は、横断のないフレームでも
+        // 毎フレーム再評価する（v0.3.43、飢餓予約と同じ考え方）。
+        foreach (Chain ch in _chains)
+        {
+            if (!ch.Scheduled && ch.Crossings.Count >= 2)
+            {
+                TrySchedule(ch, timeSeconds, scheduled, isRevision: false);
+            }
+        }
+
         // 期限切れの鎖を診断へ。
         for (int i = _chains.Count - 1; i >= 0; i--)
         {
@@ -218,7 +228,13 @@ public sealed class LineCrossingTracker : ILaneTracker
                 best = ch;
             }
         }
-        if (best != null && bestErr <= AttachToleranceSeconds)
+        // 予約済みの鎖への接続は許容を広げる（v0.3.43）: 2 点フィットは
+        // 誤差が大きく、その予測で 3 本目を弾くと締め直しの機会自体を
+        // 失う（v0.3.42 の実測: 予約 876 件中 874 件が 2 横断のまま確定）。
+        double tolerance = best != null && best.Scheduled
+            ? AttachToleranceSeconds * 2
+            : AttachToleranceSeconds;
+        if (best != null && bestErr <= tolerance)
         {
             best.Crossings.Add((t, w));
             best.LastLine = line;
@@ -320,6 +336,22 @@ public sealed class LineCrossingTracker : ILaneTracker
         double tHit = (_judgmentW - a) / b;
         if (!ch.Scheduled)
         {
+            // 予約は原則 3 横断そろってから（v0.3.43）。2 点フィットは残差が
+            // 恒等的に 0 で品質ゲートが効かず、短い基線の誤差が外挿で増幅
+            // された（v0.3.42 実測: 中央誤差 14.2ms、±10ms 内 38%）。
+            // 3 本目のライン到達予測を 40ms 過ぎても横断が来ない場合のみ、
+            // 2 点フィットで落下傘予約する（ライン2横断はヒット 87ms 前、
+            // 予測+40ms でもヒットまで約 47ms 残る）。
+            if (ch.Crossings.Count < 3)
+            {
+                double wLast = W(LineYs[LineYs.Length - 1]);
+                double predLast = (wLast - a) / b;
+                if (now <= predLast + 0.040)
+                {
+                    ch.FailReason = "wait3";
+                    return;
+                }
+            }
             if (tHit - now < -0.02 || tHit - now > EmitHorizonSeconds)
             {
                 ch.FailReason = "horizon";
