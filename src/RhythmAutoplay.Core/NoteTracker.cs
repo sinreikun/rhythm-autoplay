@@ -19,7 +19,9 @@ public readonly record struct ExpiredTrack(
     double LastY,
     double FirstTime,
     double LastSeenTime,
-    double BestResidual);
+    double BestResidual,
+    string FailReason = "",
+    string DeathbedReason = "");
 
 /// <summary>
 /// 1レーン分のノーツ追跡。フレームごとの検出（中心 Y の列）を同一ノーツの
@@ -40,6 +42,12 @@ public sealed class LaneNoteTracker : ILaneTracker
         public double FirstTime { get; set; }
         public int TotalSamples { get; set; }
         public double BestResidual { get; set; } = double.PositiveInfinity;
+
+        /// <summary>最後の通常試行（確定窓あり）が落ちたゲート名。診断用（v0.3.27）。</summary>
+        public string LastFailNormal { get; set; } = "none";
+
+        /// <summary>最後の死に際試行（確定窓バイパス）が落ちたゲート名。診断用（v0.3.27）。</summary>
+        public string LastFailBypass { get; set; } = "none";
 
         /// <summary>矢印の方向はフレームごとに推定が揺れる（模様が流れるアニメーション）ため、票を貯めて多数決で決める。</summary>
         public Dictionary<ArrowDirection, int> DirectionVotes { get; } = new();
@@ -242,7 +250,8 @@ public sealed class LaneNoteTracker : ILaneTracker
                 }
                 _expired.Add(new ExpiredTrack(
                     t.Kind, t.Scheduled, t.TotalSamples,
-                    t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual));
+                    t.FirstY, t.LastY, t.FirstTime, t.LastSeenTime, t.BestResidual,
+                    t.LastFailNormal, t.LastFailBypass));
             }
         }
         _tracks.RemoveAll(t =>
@@ -329,14 +338,27 @@ public sealed class LaneNoteTracker : ILaneTracker
             ? double.PositiveInfinity
             : Math.Max(_commitWindowSeconds, 0.05);
         bool commitReady = bypassCommit || hitTime - timeSeconds <= commitThreshold;
-        if (predicted
-            && bornAboveGate
-            && moved
-            && directionReady
-            && commitReady
-            && residual <= _maxResidual
-            && hitTime >= timeSeconds - pastGraceSeconds
-            && hitTime <= timeSeconds + _scheduleHorizonSeconds)
+        // 診断（v0.3.27）: 最初に落ちたゲートを記録する。ゴースト解析で
+        // 「適合の良い軌跡がなぜ死ぬのか」を推測でなく実測で切り分けるため。
+        string fail =
+            !predicted ? "nofit" :
+            !bornAboveGate ? "born" :
+            !moved ? "moved" :
+            !directionReady ? "dir" :
+            !commitReady ? "commit" :
+            residual > _maxResidual ? "resid" :
+            hitTime < timeSeconds - pastGraceSeconds ? "past" :
+            hitTime > timeSeconds + _scheduleHorizonSeconds ? "horizon" :
+            "ok";
+        if (bypassCommit)
+        {
+            track.LastFailBypass = fail;
+        }
+        else
+        {
+            track.LastFailNormal = fail;
+        }
+        if (fail == "ok")
         {
             return new ScheduledNote(
                 track.Kind, modal, hitTime, residual,
