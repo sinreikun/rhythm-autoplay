@@ -17,9 +17,13 @@ public sealed record LaneGeometry(
     public static LaneGeometry Default => new(
         CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21, VanishingY: 0.10);
 
-    /// <summary>HYPNOSYNC の初期推定（ストアスクリーンショットからの目視見積もり。実機較正で確定させる）。</summary>
+    /// <summary>
+    /// HYPNOSYNC の形状。2026-11-06 にマスター提供の実プレイ画面から実測:
+    /// ハイウェイ上端 Y=0.563（半幅 0.0495）、判定ライン Y=0.941（半幅 0.1625）、
+    /// 中心 X=0.499。レーン端の直線を延長した消失点は Y≈0.39。
+    /// </summary>
     public static LaneGeometry HypnosyncEstimate => new(
-        CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21, VanishingY: 0.12);
+        CenterX: 0.499, TopY: 0.563, TopHalfWidth: 0.0495, BottomY: 0.941, BottomHalfWidth: 0.1625, VanishingY: 0.39);
 
     public double HalfWidthAt(double y)
     {
