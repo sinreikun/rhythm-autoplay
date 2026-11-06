@@ -137,24 +137,36 @@ public sealed class PlaySession
         // v0.3.17: 発火は専用スレッドが担当する。従来はキャプチャループ内
         // でポーリングしており、発火遅れ (schedErr) は平均 +9ms / 標準偏差
         // 5ms / 最大 +39ms まで広がっていた（v0.3.16 の play ログ実測）。
-        // InputScheduler の設計コメントが本来想定していた形に戻す:
-        // 次の発火時刻まで高分解能で待ち、最後の 1ms 強は譲って回す。
-        // scheduler・eventLog・keysDown は ioGate でメインスレッドと排他。
-        var ioGate = new object();
+        // v0.3.18: 専用スレッドでも 6〜15ms の山が残った。発火処理の中で
+        // SendInput とログのディスク flush が直列し、単一ロック経由で
+        // メインスレッドの大量の X 行書き込みとも競合していたためと見る。
+        // 対策: ロックをスケジューラ用とログ用に分離し、送信はロックの
+        // 外で行い、schedErr は送信前の時刻で測り、F 行はバッファして
+        // 次の発火まで余裕があるときに一括で書き出す。待ちの最終区間は
+        // Sleep(0) の譲渡ではなくスピンで詰める。
+        var schedGate = new object();
+        var logGate = new object();
 
         void LogEvent(string line)
         {
-            lock (ioGate)
+            lock (logGate)
             {
                 eventLog?.WriteLine(line);
             }
         }
 
-        // ioGate を保持した状態で呼ぶこと。
-        void FireDueLocked()
+        // 発火スレッド専用。due イベントを取り出して送信し、F 行は
+        // バッファへ積む（書き出しは FlushLogBuffer が行う）。
+        void FireDue(List<string> logBuffer)
         {
-            foreach (ScheduledInput due in scheduler.CollectDue(capturer.Now))
+            IReadOnlyList<ScheduledInput> dueEvents;
+            lock (schedGate)
             {
+                dueEvents = scheduler.CollectDue(capturer.Now);
+            }
+            foreach (ScheduledInput due in dueEvents)
+            {
+                double firedAt = capturer.Now;
                 if (_options.DryRun)
                 {
                     continue;
@@ -171,8 +183,8 @@ public sealed class PlaySession
                     InputSender.Send(due.Key, true);
                     keysDown.Add(due.Key);
                     fired++;
-                    eventLog?.WriteLine(
-                        $"F now={capturer.Now:F3} key={due.Key} due={due.TimeSeconds:F3} schedErr={(capturer.Now - due.TimeSeconds) * 1000:F0}ms");
+                    logBuffer.Add(
+                        $"F now={firedAt:F3} key={due.Key} due={due.TimeSeconds:F3} schedErr={(firedAt - due.TimeSeconds) * 1000:F0}ms");
                 }
                 else if (keysDown.Remove(due.Key))
                 {
@@ -181,34 +193,63 @@ public sealed class PlaySession
             }
         }
 
+        void FlushLogBuffer(List<string> logBuffer)
+        {
+            if (logBuffer.Count > 0 && eventLog is not null)
+            {
+                lock (logGate)
+                {
+                    eventLog.WriteLine(string.Join(Environment.NewLine, logBuffer));
+                }
+            }
+            logBuffer.Clear();
+        }
+
         _fireStop = false;
         timeBeginPeriod(1);
         var fireThread = new Thread(() =>
         {
-            while (!_cancelled && !_fireStop)
+            var logBuffer = new List<string>();
+            try
             {
-                double waitMs;
-                lock (ioGate)
+                while (!_cancelled && !_fireStop)
                 {
-                    FireDueLocked();
-                    double? next = scheduler.NextTimeSeconds;
-                    waitMs = next is null
-                        ? 4.0
-                        : Math.Clamp((next.Value - capturer.Now) * 1000.0, 0.0, 4.0);
+                    FireDue(logBuffer);
+                    double waitMs;
+                    lock (schedGate)
+                    {
+                        double? next = scheduler.NextTimeSeconds;
+                        waitMs = next is null
+                            ? 4.0
+                            : Math.Clamp((next.Value - capturer.Now) * 1000.0, 0.0, 4.0);
+                    }
+                    // 次の発火まで余裕があるうちにログを書き出す。
+                    if (waitMs > 1.0)
+                    {
+                        FlushLogBuffer(logBuffer);
+                    }
+                    if (waitMs > 2.5)
+                    {
+                        Thread.Sleep((int)(waitMs - 2.0));
+                    }
+                    else if (waitMs > 0.0)
+                    {
+                        double deadline = capturer.Now + waitMs / 1000.0;
+                        while (!_cancelled && !_fireStop && capturer.Now < deadline)
+                        {
+                            Thread.SpinWait(256);
+                        }
+                    }
                 }
-                if (waitMs > 1.6)
-                {
-                    Thread.Sleep((int)(waitMs - 1.2));
-                }
-                else if (waitMs > 0.0)
-                {
-                    Thread.Sleep(0);
-                }
+            }
+            finally
+            {
+                FlushLogBuffer(logBuffer);
             }
         })
         {
             IsBackground = true,
-            Priority = ThreadPriority.AboveNormal,
+            Priority = ThreadPriority.Highest,
             Name = "RhythmAutoplay.Fire",
         };
         fireThread.Start();
@@ -261,7 +302,7 @@ public sealed class PlaySession
                         continue;
                     }
                     recentSchedules.Add((signature, sn.THit, now));
-                    lock (ioGate)
+                    lock (schedGate)
                     {
                         foreach (ScheduledInput ev in events)
                         {
