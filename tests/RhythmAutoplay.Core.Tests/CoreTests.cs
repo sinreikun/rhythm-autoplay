@@ -200,6 +200,72 @@ public class LaneNoteTrackerTests
     }
 
     [Fact]
+    public void ArrowWaitsForDirection_ThenSchedulesWithModalDirection()
+    {
+        var tracker = new LaneNoteTracker(judgmentY: 0.94);
+        int scheduledCount = 0;
+        ArrowDirection? scheduledDirection = null;
+        int scheduledAtFrame = -1;
+        for (int i = 0; i <= 45; i++)
+        {
+            double t = i / 60.0;
+            double y = 0.30 + 0.9 * t;
+            ArrowDirection? dir = i switch
+            {
+                < 5 => null,
+                5 => ArrowDirection.Left,
+                6 => ArrowDirection.Right,
+                _ => ArrowDirection.Left,
+            };
+            var det = new NoteDetection(0, NoteKind.Arrow, dir, 0.4, y, t);
+            foreach (var (_, direction, _) in tracker.Observe(t, new[] { det }))
+            {
+                scheduledCount++;
+                scheduledDirection = direction;
+                scheduledAtFrame = i;
+            }
+        }
+        Assert.Equal(1, scheduledCount);
+        Assert.True(scheduledAtFrame >= 5, "方向が付く前に予約してはいけない");
+        Assert.Equal(ArrowDirection.Left, scheduledDirection);
+    }
+
+    [Fact]
+    public void ArrowWithoutDirection_NeverSchedules()
+    {
+        var tracker = new LaneNoteTracker(judgmentY: 0.94);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 45; i++)
+        {
+            double t = i / 60.0;
+            var det = new NoteDetection(0, NoteKind.Arrow, null, 0.4, 0.30 + 0.9 * t, t);
+            scheduledCount += tracker.Observe(t, new[] { det }).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
+    public void DenseSameLanePair_BothSchedule()
+    {
+        // 同色・同レーンの接近した2連（間隔 0.055、高速）。予測位置ベースの
+        // 対応付けで両方とも予約できることを確認する。
+        var tracker = new LaneNoteTracker(judgmentY: 0.94);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = i / 60.0;
+            double yFront = 0.20 + 1.4 * t;
+            var dets = new List<NoteDetection>
+            {
+                new(0, NoteKind.Blue, null, 0.4, yFront - 0.055, t),
+                new(0, NoteKind.Blue, null, 0.4, yFront, t),
+            };
+            scheduledCount += tracker.Observe(t, dets).Count;
+        }
+        Assert.Equal(2, scheduledCount);
+    }
+
+    [Fact]
     public void TwoNotesSameLane_ScheduleSeparately()
     {
         var tracker = new LaneNoteTracker(judgmentY: 0.94);
