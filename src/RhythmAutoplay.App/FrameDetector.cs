@@ -41,7 +41,7 @@ public sealed class FrameDetector
         }
         if (LineMode)
         {
-            ScanLines(frame, results);
+            ScanLines(frame, bands, results);
         }
         return results;
     }
@@ -54,7 +54,9 @@ public sealed class FrameDetector
     /// 「その行に色があるか」だけを毎フレーム申告する。塊の成立条件を
     /// 課さないため、薄い・小さいノーツでもライン上では拾える。
     /// </summary>
-    private void ScanLines(CapturedFrame frame, List<NoteDetection> results)
+    private void ScanLines(
+        CapturedFrame frame, List<(int TopPy, int BottomPy)> bands,
+        List<NoteDetection> results)
     {
         LaneGeometry geo = _profile.Geometry;
         int w = frame.Width, h = frame.Height;
@@ -72,11 +74,30 @@ public sealed class FrameDetector
                 for (int dpy = -2; dpy <= 2; dpy += 2)
                 {
                     int py = Math.Clamp(pyC + dpy, 0, h - 1);
+                    // 矢印バンドの内側では、通常分類で取れない場合に限り
+                    // 色相だけの緩い分類で拾う（v0.3.46）。白帯の上に
+                    // 半透明で重なったノーツは彩度・明度が落ちて通常分類を
+                    // 落ち、横断の鎖が切れていた（Floating の CRINGE 44 の
+                    // 主因候補、マスター実機観察 2026-11-07）。レーンパスの
+                    // ClassifyRow と同じ規則にそろえる。
+                    bool inBand = false;
+                    foreach ((int top, int bottom) in bands)
+                    {
+                        if (py >= top && py <= bottom)
+                        {
+                            inBand = true;
+                            break;
+                        }
+                    }
                     foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
                     {
                         int px = Math.Clamp((int)(cx * w + off), 0, w - 1);
                         var (r, g, b) = frame.PixelAt(px, py);
                         PixelColor c = ColorClassifier.Classify(r, g, b);
+                        if (c == PixelColor.None && inBand)
+                        {
+                            c = ColorClassifier.ClassifyLoose(r, g, b);
+                        }
                         if (c != PixelColor.None)
                         {
                             counts[(int)c]++;
