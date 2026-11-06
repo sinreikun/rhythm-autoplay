@@ -373,6 +373,13 @@ public sealed class LaneNoteTracker : ILaneTracker
             hitTime < timeSeconds - pastGraceSeconds ? "past" :
             hitTime > timeSeconds + _scheduleHorizonSeconds ? "horizon" :
             "ok";
+        // 最良直線の品質ゲートは通常の残差ゲートの 5/3 倍まで許す（v0.3.30）。
+        // v0.3.29 の実測では残りゴースト 26 件中 11 件が「直線はあるが
+        // 残差 0.012 超」で、0.020 までの緩和が次の一手になった。誤った
+        // 時刻の入力はグレードを落とすだけで CRINGE にはならない（誤キー
+        // 実験で確認済み）ため、無入力で確実に落とすより期待値が高い。
+        // 通常ゲートに比例させるのは、プロファイル側で締めた場合に
+        // フォールバックだけ緩くならないようにするため。
         // 最良直線へのフォールバック（v0.3.28、判定条件を v0.3.29 で是正）:
         // 現在の窓の適合が信頼できない（予測不成立 or 残差ゲート超え）場合に
         // 保存した最良直線で到達時刻を組み直し、その時刻で確定窓・過去猶予・
@@ -384,7 +391,7 @@ public sealed class LaneNoteTracker : ILaneTracker
         // ないので、フォールバック側でも独立に要求する。
         if ((!predicted || residual > _maxResidual)
             && track.BestLine is { } bl
-            && track.BestLineResidual <= _maxResidual
+            && track.BestLineResidual <= _maxResidual * (5.0 / 3.0)
             && bornAboveGate && moved && directionReady
             && bl.Velocity < -1e-9
             && !double.IsNaN(_vanishingY)
