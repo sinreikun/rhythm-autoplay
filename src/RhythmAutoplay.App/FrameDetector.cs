@@ -49,6 +49,14 @@ public sealed class FrameDetector
             {
                 return;
             }
+            // ヒット時にレーン全体が光る演出は、縦に長い run として現れる。
+            // ノーツは薄いバー（実測で判定ライン付近でも 16px 程度）なので、
+            // 画面高の 5% を超える run はノーツではないとして捨てる。
+            int maxBlobPx = Math.Max(28, (int)(frame.Height * 0.05));
+            if (runLast - runStart > maxBlobPx)
+            {
+                return;
+            }
             int centerPy = (runStart + runLast) / 2;
             double centerY = centerPy / (double)h;
             double centerX = geo.LaneCenterX(lane, _profile.LaneCount, centerY);
@@ -124,25 +132,40 @@ public sealed class FrameDetector
         return right - left + 1;
     }
 
+    /// <summary>矢印パスの候補行。方向推定に使う統計（印ピクセルの正規化重心 X とレーン中央部の印比率）を持つ。</summary>
+    private readonly record struct ArrowRow(int Py, int X0, int X1, double MeanRx, double CenterMass);
+
     private void DetectArrows(CapturedFrame frame, int pyTop, int pyJudge, List<NoteDetection> results)
     {
         LaneGeometry geo = _profile.Geometry;
         int w = frame.Width, h = frame.Height;
 
-        var candidateRows = new List<(int Py, int X0, int X1)>();
+        var candidateRows = new List<ArrowRow>();
         int scanFrom = pyTop + (int)((pyJudge - pyTop) * 0.08);
-        for (int py = scanFrom; py <= pyJudge; py += 4)
+        for (int py = scanFrom; py <= pyJudge; py += 2)
         {
             double y = py / (double)h;
             double half = geo.HalfWidthAt(y);
-            int xFrom = Clamp((int)((geo.CenterX - half) * w), 0, w - 1);
-            int xTo = Clamp((int)((geo.CenterX + half) * w), 0, w - 1);
+            double leftPx = (geo.CenterX - half) * w;
+            double widthPx = 2 * half * w;
+            int xFrom = Clamp((int)leftPx, 0, w - 1);
+            int xTo = Clamp((int)(leftPx + widthPx), 0, w - 1);
 
             int bestStart = -1, bestEnd = -1, curStart = -1, curGap = 0;
+            double rxSum = 0;
+            int markCount = 0, centerCount = 0;
             for (int px = xFrom; px <= xTo; px += 2)
             {
                 if (IsMark(frame, px, py))
                 {
+                    double rx = (px - leftPx) / widthPx;
+                    rxSum += rx;
+                    markCount++;
+                    double laneFrac = (rx * _profile.LaneCount) % 1.0;
+                    if (Math.Abs(laneFrac - 0.5) < 0.25)
+                    {
+                        centerCount++;
+                    }
                     if (curStart < 0)
                     {
                         curStart = px;
@@ -156,7 +179,7 @@ public sealed class FrameDetector
                 }
                 else
                 {
-                    // 白シェブロン（《《《）は字形ごとに暗い隙間が空くため、
+                    // 白シェブロンは字形ごとに暗い隙間が空くため、
                     // 隙間 30px までは同じ連なりとして扱う（v0.3.1）。
                     curGap += 2;
                     if (curGap > 30)
@@ -168,19 +191,21 @@ public sealed class FrameDetector
             }
 
             double laneWidthPx = geo.LaneWidthAt(_profile.LaneCount, y) * w;
-            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5)
+            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0)
             {
-                candidateRows.Add((py, bestStart, bestEnd));
+                candidateRows.Add(new ArrowRow(
+                    py, bestStart, bestEnd, rxSum / markCount, centerCount / (double)markCount));
             }
         }
 
-        // 候補行を塊にまとめる。
+        // 候補行を塊にまとめる。模様とその下の横線は最大 20px 離れるため、
+        // 間隔 20 までは同じノーツとして扱う。
         int i = 0;
         while (i < candidateRows.Count)
         {
             int j = i;
             int widest = i;
-            while (j + 1 < candidateRows.Count && candidateRows[j + 1].Py - candidateRows[j].Py <= 8)
+            while (j + 1 < candidateRows.Count && candidateRows[j + 1].Py - candidateRows[j].Py <= 20)
             {
                 j++;
                 if (candidateRows[j].X1 - candidateRows[j].X0 > candidateRows[widest].X1 - candidateRows[widest].X0)
@@ -189,56 +214,100 @@ public sealed class FrameDetector
                 }
             }
 
-            int centerPy = (candidateRows[i].Py + candidateRows[j].Py) / 2;
-            double centerY = centerPy / (double)h;
+            // 方向ノーツの基準位置は波模様そのものではなく、その下にある横線
+            // （マスターの実機確認）。塊の最下行を検出 Y として追跡する。
+            double centerY = candidateRows[j].Py / (double)h;
             var wide = candidateRows[widest];
             double centerX = ((wide.X0 + wide.X1) / 2.0) / w;
 
-            ArrowDirection? direction = EstimateDirection(frame, candidateRows, i, j, widest);
+            // 方向推定は模様部分だけで行う（下の横線は最大の行間ギャップで切り離す）。
+            int patternEnd = j;
+            if (j - i + 1 >= 4)
+            {
+                int bestGap = 0, bestSplit = -1;
+                for (int k = i; k < j; k++)
+                {
+                    int gap = candidateRows[k + 1].Py - candidateRows[k].Py;
+                    if (gap > bestGap)
+                    {
+                        bestGap = gap;
+                        bestSplit = k;
+                    }
+                }
+                if (bestGap >= 12 && bestSplit - i + 1 >= 2)
+                {
+                    patternEnd = bestSplit;
+                }
+            }
+
+            ArrowDirection? direction = EstimateDirection(candidateRows, i, patternEnd);
             int lane = NearestLane(geo, centerX, centerY);
             results.Add(new NoteDetection(lane, NoteKind.Arrow, direction, centerX, centerY, frame.TimeSeconds));
             i = j + 1;
         }
     }
 
-    private ArrowDirection? EstimateDirection(
-        CapturedFrame frame, List<(int Py, int X0, int X1)> rows, int from, int to, int widestIndex)
+    /// <summary>
+    /// シェブロンの方向推定。字形はレーン端まで届くため外形（幅の突出）では
+    /// 読めず、印ピクセルの分布で読む（実スクリーンショット4件で検証済み）:
+    /// - 左右: 正規化した印重心 X の軌跡が、帯の中央で山になれば右、谷になれば左。
+    /// - 上下: レーン中央部の印比率が上部で高ければ上、下部で高ければ下
+    ///   （∧ は頂点がレーン中央にあり脚が端に開くため）。
+    /// </summary>
+    private static ArrowDirection? EstimateDirection(List<ArrowRow> rows, int from, int to)
     {
-        var mid = rows[widestIndex];
-        int heightPx = rows[to].Py - rows[from].Py;
-        int delta = Math.Max(4, heightPx / 4);
-
-        (int X0, int X1)? ExtentAt(int targetPy)
-        {
-            (int, int)? best = null;
-            int bestDist = int.MaxValue;
-            for (int k = from; k <= to; k++)
-            {
-                int d = Math.Abs(rows[k].Py - targetPy);
-                if (d < bestDist)
-                {
-                    bestDist = d;
-                    best = (rows[k].X0, rows[k].X1);
-                }
-            }
-            return best;
-        }
-
-        var above = ExtentAt(mid.Py - delta);
-        var below = ExtentAt(mid.Py + delta);
-        if (above is null || below is null)
+        int n = to - from + 1;
+        if (n < 5)
         {
             return null;
         }
-        int protrudeRight = mid.X1 - Math.Max(above.Value.X1, below.Value.X1);
-        int protrudeLeft = Math.Min(above.Value.X0, below.Value.X0) - mid.X0;
-        if (protrudeRight >= 3 && protrudeRight > protrudeLeft)
+        int third = Math.Max(1, n / 3);
+
+        double MeanRx(int s, int e)
+        {
+            double a = 0;
+            for (int k = s; k <= e; k++)
+            {
+                a += rows[k].MeanRx;
+            }
+            return a / (e - s + 1);
+        }
+
+        double CenterMass(int s, int e)
+        {
+            double a = 0;
+            for (int k = s; k <= e; k++)
+            {
+                a += rows[k].CenterMass;
+            }
+            return a / (e - s + 1);
+        }
+
+        double meanTop = MeanRx(from, from + third - 1);
+        int midStart = from + n / 2 - third / 2;
+        double meanMid = MeanRx(midStart, midStart + third - 1);
+        double meanBot = MeanRx(to - third + 1, to);
+        double cmTop = CenterMass(from, from + third - 1);
+        double cmBot = CenterMass(to - third + 1, to);
+
+        double dx1 = meanMid - meanTop, dx2 = meanBot - meanMid;
+        const double th = 0.008;
+        if (dx1 > th && dx2 < -th)
         {
             return ArrowDirection.Right;
         }
-        if (protrudeLeft >= 3 && protrudeLeft > protrudeRight)
+        if (dx1 < -th && dx2 > th)
         {
             return ArrowDirection.Left;
+        }
+        double cmTrend = cmTop - cmBot;
+        if (cmTrend > 0.06)
+        {
+            return ArrowDirection.Up;
+        }
+        if (cmTrend < -0.06)
+        {
+            return ArrowDirection.Down;
         }
         return null;
     }
