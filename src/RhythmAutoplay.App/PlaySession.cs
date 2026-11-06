@@ -54,7 +54,7 @@ public sealed class PlaySession
         var trackers = new LaneNoteTracker[_profile.LaneCount];
         for (int lane = 0; lane < trackers.Length; lane++)
         {
-            trackers[lane] = new LaneNoteTracker(_profile.JudgmentLineY);
+            trackers[lane] = new LaneNoteTracker(_profile.JudgmentLineY, vanishingY: _profile.Geometry.VanishingY);
         }
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
