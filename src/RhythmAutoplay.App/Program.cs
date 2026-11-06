@@ -1,1 +1,118 @@
-dXNpbmcgU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzOwp1c2luZyBSaHl0aG1BdXRvcGxheS5Db3JlOwp1c2luZyBBcnJvd0RpcmVjdGlvbiA9IFJoeXRobUF1dG9wbGF5LkNvcmUuQXJyb3dEaXJlY3Rpb247CnVzaW5nIFJoeXRobUF1dG9wbGF5LkFwcDsKCi8vIFJoeXRobUF1dG9wbGF5IOacrOS9kwovLyDlvJXmlbDjgarjgZcgLyAiZ3VpIjogR1VJIOOCkui1t+WLleOBmeOCi++8iOmAmuW4uOOBruS9v+OBhOaWue+8ieOAggovLyDlvJXmlbAgInBsYXkiOiDlrp/jg5fjg6zjgqTntYzot6/vvIjjgq3jg6Pjg5fjg4Hjg6PihpLmpJzlh7rihpLkuojmuKzihpLlhaXlipvvvInjgpLjgrPjg7Pjgr3jg7zjg6vjgafplovlp4vjgZnjgovjgIIKLy8gICDov73liqDlvJXmlbA6IC0tZHJ5LXJ1bu+8iOWFpeWKm+OBm+OBmuaknOWHuuOBqOeZuueBq+S6iOWumuOBoOOBkeihqOekuu+8iQovLyAgICAgICAgICAgICAtLW9mZnNldC1tcyBO77yI55m654Gr5pmC5Yi744Gu5YWo5L2T44Kq44OV44K744OD44OI77yJCi8vICAgICAgICAgICAgIC0tc2Vjb25kcyBO77yI6Ieq5YuV57WC5LqG44G+44Gn44Gu56eS5pWw44CC5qSc6Ki855So77yJCi8vIOW8leaVsCAic25hcHNob3QiOiDovIPmraPnlKjjgavjg5Xjg6zjg7zjg6DjgajmpJzlh7rntZDmnpzjgpLkv53lrZjjgZnjgovjgIIKLy8g5byV5pWwICJpbmZvIjog44OX44Ot44OV44Kh44Kk44Or44Go5LqI5ris44Kz44Ki44Gu6Ieq5bex56K66KqN44KS6KGo56S644GZ44KL44CCCgppZiAoYXJncy5MZW5ndGggPT0gMCB8fCBhcmdzWzBdLkVxdWFscygiZ3VpIiwgU3RyaW5nQ29tcGFyaXNvbi5PcmRpbmFsSWdub3JlQ2FzZSkpCnsKICAgIEFwcGxpY2F0aW9uLkVuYWJsZVZpc3VhbFN0eWxlcygpOwogICAgQXBwbGljYXRpb24uU2V0Q29tcGF0aWJsZVRleHRSZW5kZXJpbmdEZWZhdWx0KGZhbHNlKTsKICAgIEFwcGxpY2F0aW9uLlJ1bihuZXcgTWFpbkZvcm0oKSk7CiAgICByZXR1cm4gMDsKfQoKLy8gQ0xJIOODouODvOODieOBp+OBr+imquOCs+ODs+OCveODvOODq+OBq+aOpee2muOBl+OBpuWHuuWKm+OBmeOCi++8iFdpbkV4ZSDjga7jgZ/jgoHvvInjgIIKTmF0aXZlQ29uc29sZS5BdHRhY2hDb25zb2xlKC0xKTsKCmlmIChhcmdzLkxlbmd0aCA+IDAgJiYgYXJnc1swXS5FcXVhbHMoInBsYXkiLCBTdHJpbmdDb21wYXJpc29uLk9yZGluYWxJZ25vcmVDYXNlKSkKewogICAgYm9vbCBkcnlSdW4gPSBhcmdzLkNvbnRhaW5zKCItLWRyeS1ydW4iLCBTdHJpbmdDb21wYXJlci5PcmRpbmFsSWdub3JlQ2FzZSk7CiAgICBkb3VibGUgb2Zmc2V0TXMgPSAwOwogICAgaW50IHNlY29uZHMgPSAwOwogICAgZm9yIChpbnQgaSA9IDE7IGkgPCBhcmdzLkxlbmd0aCAtIDE7IGkrKykKICAgIHsKICAgICAgICBpZiAoYXJnc1tpXSA9PSAiLS1vZmZzZXQtbXMiICYmIGRvdWJsZS5UcnlQYXJzZShhcmdzW2kgKyAxXSwgb3V0IGRvdWJsZSB2KSkKICAgICAgICB7CiAgICAgICAgICAgIG9mZnNldE1zID0gdjsKICAgICAgICB9CiAgICAgICAgaWYgKGFyZ3NbaV0gPT0gIi0tc2Vjb25kcyIgJiYgaW50LlRyeVBhcnNlKGFyZ3NbaSArIDFdLCBvdXQgaW50IHMpKQogICAgICAgIHsKICAgICAgICAgICAgc2Vjb25kcyA9IHM7CiAgICAgICAgfQogICAgfQogICAgdmFyIHBsYXlTZXNzaW9uID0gbmV3IFBsYXlTZXNzaW9uKAogICAgICAgIEdhbWVQcm9maWxlLkh5cG5vc3luY0RlZmF1bHQoKSwKICAgICAgICBuZXcgUGxheU9wdGlvbnMgeyBEcnlSdW4gPSBkcnlSdW4sIE9mZnNldE1pbGxpc2Vjb25kcyA9IG9mZnNldE1zLCBEdXJhdGlvblNlY29uZHMgPSBzZWNvbmRzLCBFdmVudExvZ0RpcmVjdG9yeSA9IEd1aVNldHRpbmdzLkV2ZW50TG9nRGlyZWN0b3J5IH0pOwogICAgcmV0dXJuIHBsYXlTZXNzaW9uLlJ1bigpOwp9CgppZiAoYXJncy5MZW5ndGggPiAwICYmIGFyZ3NbMF0uRXF1YWxzKCJzbmFwc2hvdCIsIFN0cmluZ0NvbXBhcmlzb24uT3JkaW5hbElnbm9yZUNhc2UpKQp7CiAgICBpbnQgc25hcFNlY29uZHMgPSA4OwogICAgaW50IGludGVydmFsTXMgPSA1MDA7CiAgICBzdHJpbmc/IG91dERpciA9IG51bGw7CiAgICBmb3IgKGludCBpID0gMTsgaSA8IGFyZ3MuTGVuZ3RoIC0gMTsgaSsrKQogICAgewogICAgICAgIGlmIChhcmdzW2ldID09ICItLXNlY29uZHMiICYmIGludC5UcnlQYXJzZShhcmdzW2kgKyAxXSwgb3V0IGludCBzKSkKICAgICAgICB7CiAgICAgICAgICAgIHNuYXBTZWNvbmRzID0gczsKICAgICAgICB9CiAgICAgICAgaWYgKGFyZ3NbaV0gPT0gIi0taW50ZXJ2YWwtbXMiICYmIGludC5UcnlQYXJzZShhcmdzW2kgKyAxXSwgb3V0IGludCBpdikpCiAgICAgICAgewogICAgICAgICAgICBpbnRlcnZhbE1zID0gaXY7CiAgICAgICAgfQogICAgICAgIGlmIChhcmdzW2ldID09ICItLW91dCIpCiAgICAgICAgewogICAgICAgICAgICBvdXREaXIgPSBhcmdzW2kgKyAxXTsKICAgICAgICB9CiAgICB9CiAgICB2YXIgc25hcHNob3RTZXNzaW9uID0gbmV3IFNuYXBzaG90U2Vzc2lvbigKICAgICAgICBHYW1lUHJvZmlsZS5IeXBub3N5bmNEZWZhdWx0KCksCiAgICAgICAgbmV3IFNuYXBzaG90T3B0aW9ucyB7IFNlY29uZHMgPSBzbmFwU2Vjb25kcywgSW50ZXJ2YWxNaWxsaXNlY29uZHMgPSBpbnRlcnZhbE1zLCBPdXREaXJlY3RvcnkgPSBvdXREaXIgfSk7CiAgICByZXR1cm4gc25hcHNob3RTZXNzaW9uLlJ1bigpOwp9CgpHYW1lUHJvZmlsZSBwcm9maWxlID0gR2FtZVByb2ZpbGUuSHlwbm9zeW5jRGVmYXVsdCgpOwoKQ29uc29sZS5Xcml0ZUxpbmUoIlJoeXRobUF1dG9wbGF5IChib2R5KSIpOwpDb25zb2xlLldyaXRlTGluZSgkIuWvvuixoeODl+ODreODleOCoeOCpOODqzoge3Byb2ZpbGUuR2FtZUlkfSAvIOWvvuixoeODl+ODreOCu+OCuToge3Byb2ZpbGUuV2luZG93UHJvY2Vzc05hbWV9LmV4ZSIpOwpDb25zb2xlLldyaXRlTGluZSgkIuODrOODvOODs+aVsDoge3Byb2ZpbGUuTGFuZUNvdW50fSAvIOWIpOWumuODqeOCpOODsyBZOiB7cHJvZmlsZS5KdWRnbWVudExpbmVZfSIpOwpDb25zb2xlLldyaXRlTGluZSgi44Kt44O86YWN572u77yI44Ky44O844Og5YaF6Kit5a6a44KS44GT44KM44Gr5ZCI44KP44Gb44Gm44GP44Gg44GV44GE77yJOiIpOwpmb3JlYWNoIChMYW5lQmluZGluZyBsYW5lIGluIHByb2ZpbGUuTGFuZXMpCnsKICAgIENvbnNvbGUuV3JpdGVMaW5lKCQiICDjg6zjg7zjg7N7bGFuZS5MYW5lICsgMX06IOi1pD17bGFuZS5SZWRLZXl9IOmdkj17bGFuZS5CbHVlS2V5fSDntKs96LWkK+mdkiDpu4Q944Gp44Gh44KJ44Gn44KC5Y+vIik7Cn0KZm9yZWFjaCAoS2V5VmFsdWVQYWlyPEFycm93RGlyZWN0aW9uLCBzdHJpbmc+IGFycm93IGluIHByb2ZpbGUuQXJyb3dLZXlzKQp7CiAgICBDb25zb2xlLldyaXRlTGluZSgkIiAg55+i5Y2wIHthcnJvdy5LZXl9OiB7YXJyb3cuVmFsdWV9Iik7Cn0KCi8vIOS6iOa4rOOCs+OCouOBruiHquW3seeiuuiqjTog562J6YCf44Gn5Yik5a6a44Op44Kk44Oz44G46L+R44Gl44GP5ZCI5oiQ44K144Oz44OX44Or44GnIHRfaGl0IOOCkuaOqOWumuOBmeOCi+OAggp2YXIgc2FtcGxlcyA9IG5ldyBMaXN0PChkb3VibGUgVGltZSwgZG91YmxlIFkpPigpOwpmb3IgKGludCBpID0gMDsgaSA8IDY7IGkrKykKewogICAgZG91YmxlIHQgPSBpICogMC4wNTsKICAgIHNhbXBsZXMuQWRkKCh0LCAwLjIwICsgMC45MCAqIHQpKTsKfQppZiAoSGl0VGltZVByZWRpY3Rvci5UcnlQcmVkaWN0SGl0VGltZShzYW1wbGVzLCBwcm9maWxlLkp1ZGdtZW50TGluZVksIG91dCBkb3VibGUgaGl0VGltZSwgb3V0IGRvdWJsZSByZXNpZHVhbCkpCnsKICAgIENvbnNvbGUuV3JpdGVMaW5lKCQi5LqI5ris44Kz44Ki6Ieq5bex56K66KqNOiBPS++8iHRfaGl0PXtoaXRUaW1lOkYzfXMsIOaui+W3rj17cmVzaWR1YWw6RjR977yJIik7Cn0KZWxzZQp7CiAgICBDb25zb2xlLldyaXRlTGluZSgi5LqI5ris44Kz44Ki6Ieq5bex56K66KqNOiBOR++8iOaOqOWumuOBq+WkseaVl+OBl+OBvuOBl+OBn++8iSIpOwogICAgcmV0dXJuIDE7Cn0KCkNvbnNvbGUuV3JpdGVMaW5lKCLkvb/jgYTmlrk6IOW8leaVsOOBquOBl+OBpyBHVUnjgIFwbGF5IOOBp+Wun+ODl+ODrOOCpOOAgXNuYXBzaG90IOOBp+i8g+ato+eUqOOCueODiuODg+ODl+OCt+ODp+ODg+ODiOOCkui1t+WLleOBl+OBvuOBmeOAgiIpOwppZiAoIUNvbnNvbGUuSXNJbnB1dFJlZGlyZWN0ZWQpCnsKICAgIENvbnNvbGUuV3JpdGVMaW5lKCLkvZXjgYvjgq3jg7zjgpLmirzjgZnjgajntYLkuobjgZfjgb7jgZnjgIIiKTsKICAgIENvbnNvbGUuUmVhZEtleShpbnRlcmNlcHQ6IHRydWUpOwp9CnJldHVybiAwOwoKaW50ZXJuYWwgc3RhdGljIGNsYXNzIE5hdGl2ZUNvbnNvbGUKewogICAgW0RsbEltcG9ydCgia2VybmVsMzIuZGxsIiwgU2V0TGFzdEVycm9yID0gdHJ1ZSldCiAgICBwdWJsaWMgc3RhdGljIGV4dGVybiBib29sIEF0dGFjaENvbnNvbGUoaW50IHByb2Nlc3NJZCk7Cn0K
+using System.Runtime.InteropServices;
+using RhythmAutoplay.Core;
+using ArrowDirection = RhythmAutoplay.Core.ArrowDirection;
+using RhythmAutoplay.App;
+
+// RhythmAutoplay 本体
+// 引数なし / "gui": GUI を起動する（通常の使い方）。
+// 引数 "play": 実プレイ経路（キャプチャ→検出→予測→入力）をコンソールで開始する。
+//   追加引数: --dry-run（入力せず検出と発火予定だけ表示）
+//             --offset-ms N（発火時刻の全体オフセット）
+//             --seconds N（自動終了までの秒数。検証用）
+// 引数 "snapshot": 較正用にフレームと検出結果を保存する。
+// 引数 "info": プロファイルと予測コアの自己確認を表示する。
+
+if (args.Length == 0 || args[0].Equals("gui", StringComparison.OrdinalIgnoreCase))
+{
+    Application.EnableVisualStyles();
+    Application.SetCompatibleTextRenderingDefault(false);
+    Application.Run(new MainForm());
+    return 0;
+}
+
+// CLI モードでは親コンソールに接続して出力する（WinExe のため）。
+NativeConsole.AttachConsole(-1);
+
+if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase))
+{
+    bool dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
+    double offsetMs = 0;
+    int seconds = 0;
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--offset-ms" && double.TryParse(args[i + 1], out double v))
+        {
+            offsetMs = v;
+        }
+        if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
+        {
+            seconds = s;
+        }
+    }
+    var playSession = new PlaySession(
+        GameProfile.HypnosyncDefault(),
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory });
+    return playSession.Run();
+}
+
+if (args.Length > 0 && args[0].Equals("snapshot", StringComparison.OrdinalIgnoreCase))
+{
+    int snapSeconds = 8;
+    int intervalMs = 500;
+    string? outDir = null;
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
+        {
+            snapSeconds = s;
+        }
+        if (args[i] == "--interval-ms" && int.TryParse(args[i + 1], out int iv))
+        {
+            intervalMs = iv;
+        }
+        if (args[i] == "--out")
+        {
+            outDir = args[i + 1];
+        }
+    }
+    var snapshotSession = new SnapshotSession(
+        GameProfile.HypnosyncDefault(),
+        new SnapshotOptions { Seconds = snapSeconds, IntervalMilliseconds = intervalMs, OutDirectory = outDir });
+    return snapshotSession.Run();
+}
+
+GameProfile profile = GameProfile.HypnosyncDefault();
+
+Console.WriteLine("RhythmAutoplay (body)");
+Console.WriteLine($"対象プロファイル: {profile.GameId} / 対象プロセス: {profile.WindowProcessName}.exe");
+Console.WriteLine($"レーン数: {profile.LaneCount} / 判定ライン Y: {profile.JudgmentLineY}");
+Console.WriteLine("キー配置（ゲーム内設定をこれに合わせてください）:");
+foreach (LaneBinding lane in profile.Lanes)
+{
+    Console.WriteLine($"  レーン{lane.Lane + 1}: 赤={lane.RedKey} 青={lane.BlueKey} 紫=赤+青 黄=どちらでも可");
+}
+foreach (KeyValuePair<ArrowDirection, string> arrow in profile.ArrowKeys)
+{
+    Console.WriteLine($"  矢印 {arrow.Key}: {arrow.Value}");
+}
+
+// 予測コアの自己確認: 等速で判定ラインへ近づく合成サンプルで t_hit を推定する。
+var samples = new List<(double Time, double Y)>();
+for (int i = 0; i < 6; i++)
+{
+    double t = i * 0.05;
+    samples.Add((t, 0.20 + 0.90 * t));
+}
+if (HitTimePredictor.TryPredictHitTime(samples, profile.JudgmentLineY, out double hitTime, out double residual))
+{
+    Console.WriteLine($"予測コア自己確認: OK（t_hit={hitTime:F3}s, 残差={residual:F4}）");
+}
+else
+{
+    Console.WriteLine("予測コア自己確認: NG（推定に失敗しました）");
+    return 1;
+}
+
+Console.WriteLine("使い方: 引数なしで GUI、play で実プレイ、snapshot で較正用スナップショットを起動します。");
+if (!Console.IsInputRedirected)
+{
+    Console.WriteLine("何かキーを押すと終了します。");
+    Console.ReadKey(intercept: true);
+}
+return 0;
+
+internal static class NativeConsole
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AttachConsole(int processId);
+}
