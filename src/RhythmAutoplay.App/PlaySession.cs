@@ -16,6 +16,11 @@ public sealed class PlayOptions
     /// 消費するか」を実測するための実験機能で、通常は 0 (無効)。
     /// </summary>
     public double InjectStrayMilliseconds { get; init; }
+    /// <summary>
+    /// 遅延確定の窓 [ms]: 予測ヒットまでこの時間を切るまで予約を確定しない。
+    /// 小さいほど標本が溜まって予測が締まるが、確定が遅れる。既定 150。
+    /// </summary>
+    public double CommitWindowMilliseconds { get; init; } = 150;
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -103,7 +108,7 @@ public sealed class PlaySession
                     vanishingY: _profile.Geometry.VanishingY,
                     spawnGateY: spawnGateY,
                     scheduleHorizonSeconds: 1.2,
-                    commitWindowSeconds: 0.15);
+                    commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0);
         }
         Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : "track（軌跡追跡）")}");
         var scheduler = new InputScheduler();
@@ -127,6 +132,7 @@ public sealed class PlaySession
             _cancelled = true;
         };
 
+        Log($"設定: offset={_options.OffsetMilliseconds}ms commit={_options.CommitWindowMilliseconds}ms stray={_options.InjectStrayMilliseconds}ms engine={_options.Engine}");
         Log(_options.DryRun
             ? "DRY-RUN で開始します（入力は送りません）。F9 で終了します。"
             : "実プレイを開始します。F9 で終了します。");

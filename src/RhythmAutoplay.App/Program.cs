@@ -28,6 +28,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     bool dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
     double offsetMs = 0;
     double strayMs = 0;
+    double commitMs = 150;
     int seconds = 0;
     string engine = "track";
     for (int i = 1; i < args.Length - 1; i++)
@@ -40,6 +41,10 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
         {
             strayMs = sv;
         }
+        if (args[i] == "--commit-ms" && double.TryParse(args[i + 1], out double cv))
+        {
+            commitMs = cv;
+        }
         if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
         {
             seconds = s;
@@ -51,7 +56,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     }
     var playSession = new PlaySession(
         GameProfile.HypnosyncDefault(),
-        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
     return playSession.Run();
 }
 
