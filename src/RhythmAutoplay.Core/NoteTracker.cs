@@ -204,9 +204,15 @@ public sealed class LaneNoteTracker : ILaneTracker
         // 150ms→67 件 / 100ms→97 件 / 70ms→146 件と、窓を狭めるほど増えた）。
         // 未マッチの軌跡についても毎フレーム予約を試み、凍結した標本の
         // 予測が確定窓に入った時点で予約する。ゲートは通常経路と同一。
+        // ただし検出の途絶が 60ms 未満の軌跡は対象外とする（v0.3.25）。
+        // 実測では無条件の救済で予約が +199 件まで膨らんだ: 1〜2 フレーム
+        // だけ結びつかなかった断片は次のマッチで正常に確定するのが本筋で、
+        // 凍結標本で先に確定してしまうと、適合が改善する機会を奪ったまま
+        // 二重の発火になる。救済は「本当に見失った」軌跡に限る。
         foreach (Track t in _tracks)
         {
             if (!t.Scheduled && !matched.Contains(t) && t.Samples.Count >= 3
+                && timeSeconds - t.LastSeenTime >= 0.06
                 && TryBuildSchedule(t, timeSeconds, bypassCommit: false) is { } starved)
             {
                 t.Scheduled = true;
