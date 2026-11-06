@@ -10,15 +10,16 @@ public sealed record LaneGeometry(
     double TopY,
     double TopHalfWidth,
     double BottomY,
-    double BottomHalfWidth)
+    double BottomHalfWidth,
+    double VanishingY = 0.10)
 {
     /// <summary>汎用の初期値。ゲームごとの実測で上書きする前提の仮置き。</summary>
     public static LaneGeometry Default => new(
-        CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21);
+        CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21, VanishingY: 0.10);
 
     /// <summary>HYPNOSYNC の初期推定（ストアスクリーンショットからの目視見積もり。実機較正で確定させる）。</summary>
     public static LaneGeometry HypnosyncEstimate => new(
-        CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21);
+        CenterX: 0.5, TopY: 0.16, TopHalfWidth: 0.06, BottomY: 0.94, BottomHalfWidth: 0.21, VanishingY: 0.12);
 
     public double HalfWidthAt(double y)
     {
