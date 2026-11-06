@@ -165,6 +165,14 @@ public sealed class PlaySession
             }
         }
 
+        // v0.3.16: セッション側の二重発火抑制。従来方式では同じ物理ノーツが
+        // 2 つの断片から二重に予約される実測がある（同一レーン・同種で
+        // 到達時刻差の中央値 11〜20ms、曲により 69〜131 組）。帯域方式で
+        // 入れた抑制を、キー集合が同じで到達時刻が 35ms 以内の予約にも
+        // 適用する。実在する同キー連続ノーツは音楽的に 35ms 未満では
+        // 並ばない前提。
+        var recentSchedules = new List<(string Signature, double THit, double At)>();
+
         while (!_cancelled)
         {
             if ((GetAsyncKeyState(VkF9) & 0x8000) != 0)
@@ -197,7 +205,17 @@ public sealed class PlaySession
                 foreach (ScheduledNote sn in ready)
                 {
                     var note = new NoteDetection(group.Key, sn.Kind, sn.Direction, 0, _profile.JudgmentLineY, now);
-                    foreach (ScheduledInput ev in KeyPlanBuilder.BuildTap(_profile, note, sn.THit + offsetSeconds))
+                    var events = KeyPlanBuilder.BuildTap(_profile, note, sn.THit + offsetSeconds).ToList();
+                    string signature = string.Join(",", events.Select(e => e.Key).Distinct().OrderBy(k => k));
+                    recentSchedules.RemoveAll(r => now - r.At > 1.0);
+                    if (recentSchedules.Any(r => r.Signature == signature && Math.Abs(r.THit - sn.THit) <= 0.035))
+                    {
+                        eventLog?.WriteLine(
+                            $"D lane={group.Key} kind={sn.Kind} tHit={sn.THit:F3}");
+                        continue;
+                    }
+                    recentSchedules.Add((signature, sn.THit, now));
+                    foreach (ScheduledInput ev in events)
                     {
                         scheduler.Enqueue(ev);
                     }
