@@ -1,8 +1,34 @@
 using RhythmAutoplay.Core;
+using RhythmAutoplay.App;
 
 // RhythmAutoplay 本体
-// v0.1.0 は土台版: プロファイルと予測コアの自己確認まで。
-// キャプチャ→検出→入力の実プレイ経路は v0.2 で HYPNOSYNC 実機検証と一緒に入る（docs/design.md §12, §14）。
+// 引数なし: プロファイルと予測コアの自己確認を表示する。
+// 引数 "play": 実プレイ経路（キャプチャ→検出→予測→入力）を開始する。
+//   追加引数: --dry-run（入力せず検出と発火予定だけ表示）
+//             --offset-ms N（発火時刻の全体オフセット）
+//             --seconds N（自動終了までの秒数。検証用）
+
+if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase))
+{
+    bool dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
+    double offsetMs = 0;
+    int seconds = 0;
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--offset-ms" && double.TryParse(args[i + 1], out double v))
+        {
+            offsetMs = v;
+        }
+        if (args[i] == "--seconds" && int.TryParse(args[i + 1], out int s))
+        {
+            seconds = s;
+        }
+    }
+    var playSession = new PlaySession(
+        GameProfile.HypnosyncDefault(),
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, DurationSeconds = seconds });
+    return playSession.Run();
+}
 
 GameProfile profile = GameProfile.HypnosyncDefault();
 
