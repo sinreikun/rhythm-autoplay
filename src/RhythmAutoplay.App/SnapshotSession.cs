@@ -65,11 +65,15 @@ public sealed class SnapshotSession
             _cancelled = true;
         };
 
-        var lines = new List<string>();
         double startedAt = capturer.Now;
         double nextAt = startedAt;
         int index = 0;
         int totalDetections = 0;
+
+        // 検出結果はフレームごとに追記する（v0.3.32）。以前は終了時に一括で
+        // 書いていたため、drive 側の本体キル（同名プロセス一括停止）に巻き
+        // 込まれて 200 秒分の検出記録が丸ごと消えた（2026-11-07 の診断ラン）。
+        using var writer = new StreamWriter(Path.Combine(outDir, "detections.txt"), append: false) { AutoFlush = true };
 
         while (!_cancelled && capturer.Now - startedAt < _options.Seconds)
         {
@@ -94,15 +98,14 @@ public sealed class SnapshotSession
             List<NoteDetection> detections = detector.Detect(frame);
             totalDetections += detections.Count;
             SaveBmpHalf(frame, Path.Combine(outDir, $"frame_{index:D3}.bmp"));
-            lines.Add($"# frame={index} t={frame.TimeSeconds:F3} size={frame.Width}x{frame.Height} detections={detections.Count}");
+            writer.WriteLine($"# frame={index} t={frame.TimeSeconds:F3} size={frame.Width}x{frame.Height} detections={detections.Count}");
             foreach (NoteDetection d in detections)
             {
-                lines.Add($"frame={index} lane={d.Lane} kind={d.Kind} dir={d.Direction?.ToString() ?? "-"} x={d.X:F3} y={d.Y:F3}");
+                writer.WriteLine($"frame={index} lane={d.Lane} kind={d.Kind} dir={d.Direction?.ToString() ?? "-"} x={d.X:F3} y={d.Y:F3}");
             }
             index++;
         }
 
-        File.WriteAllLines(Path.Combine(outDir, "detections.txt"), lines);
         Log($"スナップショットを保存しました: {outDir}（{index} フレーム, 検出 {totalDetections} 件）");
         return 0;
     }
