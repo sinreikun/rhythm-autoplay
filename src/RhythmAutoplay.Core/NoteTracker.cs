@@ -16,6 +16,7 @@ public sealed class LaneNoteTracker
         public bool Scheduled { get; set; }
         public double LastSeenTime { get; set; }
         public double LastY { get; set; }
+        public double FirstY { get; set; }
     }
 
     private readonly List<Track> _tracks = new();
@@ -25,6 +26,7 @@ public sealed class LaneNoteTracker
     private readonly double _scheduleHorizonSeconds;
     private readonly double _maxResidual;
     private readonly double _vanishingY;
+    private readonly double _spawnGateY;
 
     public LaneNoteTracker(
         double judgmentY,
@@ -32,7 +34,8 @@ public sealed class LaneNoteTracker
         double trackTimeoutSeconds = 0.25,
         double scheduleHorizonSeconds = 2.0,
         double maxResidual = 0.012,
-        double vanishingY = double.NaN)
+        double vanishingY = double.NaN,
+        double spawnGateY = double.NaN)
     {
         _judgmentY = judgmentY;
         _matchToleranceY = matchToleranceY;
@@ -40,6 +43,7 @@ public sealed class LaneNoteTracker
         _scheduleHorizonSeconds = scheduleHorizonSeconds;
         _maxResidual = maxResidual;
         _vanishingY = vanishingY;
+        _spawnGateY = spawnGateY;
     }
 
     public int ActiveTrackCount => _tracks.Count;
@@ -85,6 +89,7 @@ public sealed class LaneNoteTracker
                     Direction = det.Direction,
                     LastSeenTime = timeSeconds,
                     LastY = det.Y,
+                    FirstY = det.Y,
                 };
                 _tracks.Add(best);
             }
@@ -110,7 +115,12 @@ public sealed class LaneNoteTracker
                 bool predicted = double.IsNaN(_vanishingY)
                     ? HitTimePredictor.TryPredictHitTime(best.Samples, _judgmentY, out hitTime, out residual)
                     : HitTimePredictor.TryPredictHitTimeProjective(best.Samples, _judgmentY, _vanishingY, out hitTime, out residual);
+                // 出現ゲート: 本物のノーツはレーン上端から現れて落下する。
+                // 画面下部にいきなり現れる塊（判定文字・コンボ数字などの UI）は
+                // 最初の検出 Y がゲートより下なので、そもそも発火候補にしない。
+                bool bornAboveGate = double.IsNaN(_spawnGateY) || best.FirstY <= _spawnGateY;
                 if (predicted
+                    && bornAboveGate
                     && residual <= _maxResidual
                     && hitTime >= timeSeconds - 0.02
                     && hitTime <= timeSeconds + _scheduleHorizonSeconds)
