@@ -7,7 +7,7 @@
  },
  "family": "lane_fall_perspective",
  "gameId": "hypnosync",
- "judgmentLineY": 0.94,
+ "judgmentLineY": 0.941,
  "keybindSetup": "Uses the game's DEFAULT keybinds (verified from the EDIT KEYBINDS screen on 2026-11-06). No in-game changes needed. If the user remapped keys in-game, edit this profile to match.",
  "laneCount": 4,
  "lanes": [
@@ -37,11 +37,11 @@
  "tapHoldMilliseconds": 40,
  "windowProcessName": "HYPNOSYNC",
  "geometry": {
-  "centerX": 0.5,
-  "topY": 0.16,
-  "topHalfWidth": 0.06,
-  "bottomY": 0.94,
-  "bottomHalfWidth": 0.21,
-  "vanishingY": 0.12
+  "centerX": 0.499,
+  "topY": 0.563,
+  "topHalfWidth": 0.0495,
+  "bottomY": 0.941,
+  "bottomHalfWidth": 0.1625,
+  "vanishingY": 0.39
  }
 }
