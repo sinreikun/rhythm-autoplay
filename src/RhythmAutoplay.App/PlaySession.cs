@@ -114,13 +114,20 @@ public sealed class PlaySession
             + 0.84 * (_profile.JudgmentLineY - _profile.Geometry.TopY);
         bool useBand = string.Equals(_options.Engine, "band", StringComparison.OrdinalIgnoreCase);
         bool useLine = string.Equals(_options.Engine, "line", StringComparison.OrdinalIgnoreCase);
-        detector.LineMode = useLine;
+        bool useHybrid = string.Equals(_options.Engine, "hybrid", StringComparison.OrdinalIgnoreCase);
+        detector.LineMode = useLine || useHybrid;
         for (int lane = 0; lane < trackers.Length; lane++)
         {
             trackers[lane] = useBand
                 ? new BandNoteTracker(
                     _profile.JudgmentLineY,
                     vanishingY: _profile.Geometry.VanishingY)
+                : useHybrid
+                ? new HybridGapFillTracker(
+                    _profile.JudgmentLineY,
+                    vanishingY: _profile.Geometry.VanishingY,
+                    spawnGateY: spawnGateY,
+                    commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0)
                 : useLine
                 ? new LineCrossingTracker(
                     _profile.JudgmentLineY,
@@ -135,7 +142,7 @@ public sealed class PlaySession
                     commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0);
             trackers[lane].CollectSamples = _options.LogSamples;
         }
-        Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : useLine ? "line（固定ライン横断）" : "track（軌跡追跡）")}");
+        Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : useHybrid ? "hybrid（ライン主軸+塊の穴埋め）" : useLine ? "line（固定ライン横断）" : "track（軌跡追跡）")}");
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
 

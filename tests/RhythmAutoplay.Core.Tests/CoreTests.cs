@@ -876,3 +876,75 @@ public class LineCrossingTrackerTests
         Assert.Equal(0, scheduledCount);
     }
 }
+
+public class HybridGapFillTrackerTests
+{
+    private const double Van = 0.39;
+
+    private static List<NoteDetection> PresenceAt(double t, double noteY)
+    {
+        var dets = new List<NoteDetection>();
+        foreach (double lineY in LineCrossingTracker.LineYs)
+        {
+            if (noteY >= lineY - 0.003 && noteY <= lineY + 0.017)
+            {
+                dets.Add(new NoteDetection(0, NoteKind.Red, null, 0.4, lineY, t, IsLinePresence: true));
+            }
+        }
+        return dets;
+    }
+
+    [Fact]
+    public void BlobOnlyNote_IsScheduledByGapFill()
+    {
+        var tracker = new HybridGapFillTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        double scheduledHit = 0;
+        // 塊だけが見えるノーツ（ライン横断は取れない）。下端は w レート
+        // 2.13 で進み、y=0.80 を t=1.000 に通過、判定到達は 1.2931。
+        double wAt(double t) => 2.439 - 2.13 * (t - 1.0);
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.80 + i / 60.0;
+            double y = Van + 1.0 / wAt(t);
+            var dets = new List<NoteDetection> { new(0, NoteKind.Red, null, 0.4, y, t) };
+            foreach (var note in tracker.Observe(t, dets))
+            {
+                scheduledCount++;
+                scheduledHit = note.THit;
+            }
+        }
+        Assert.Equal(1, scheduledCount);
+        Assert.True(Math.Abs(scheduledHit - 1.2931) < 0.03,
+            $"scheduledHit={scheduledHit:F4}");
+    }
+
+    [Fact]
+    public void TrackScheduleCoveredByLine_IsSuppressed()
+    {
+        var tracker = new HybridGapFillTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        // 同じ物理ノーツを両方式で観測する。在席は実効レート 1.70 の
+        // 軌道（ライン0 横断 t=1.000、到達 1.3672）、塊の下端は 2.13 の
+        // 軌道で同じ到達時刻 1.3672 を持つ（y=0.80 通過は t=1.0741）。
+        double wLine(double t) => 2.439 - 1.70 * (t - 1.0);
+        double wBlob(double t) => 1.8147 + 2.13 * (1.3672 - t);
+        for (int i = 0; i <= 45; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            double yLine = Van + 1.0 / wLine(t);
+            var dets = PresenceAt(t, yLine);
+            double yBlob = Van + 1.0 / wBlob(t);
+            if (yBlob >= 0.70 && yBlob <= 0.94)
+            {
+                dets.Add(new NoteDetection(0, NoteKind.Red, null, 0.4, yBlob, t));
+            }
+            scheduledCount += tracker.Observe(t, dets).Count;
+        }
+        // ラインの 1 件だけが残り、塊の予約は重複として抑制される。
+        Assert.Equal(1, scheduledCount);
+        Assert.NotEmpty(tracker.DrainSuppressed());
+    }
+}
