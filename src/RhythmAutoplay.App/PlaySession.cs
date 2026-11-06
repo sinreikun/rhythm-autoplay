@@ -145,6 +145,9 @@ public sealed class PlaySession
 
         long frames = 0;
         int scheduled = 0, fired = 0;
+        // 段階別コスト計測（v0.3.33、診断用）: ループが約31fpsに張り付く
+        // 内訳（キャプチャ / 検出 / 追跡+予約）を実測してから最適化する。
+        double capMs = 0, detMs = 0, trkMs = 0;
         double startedAt = capturer.Now;
         var keysDown = new HashSet<string>();
 
@@ -303,6 +306,7 @@ public sealed class PlaySession
             }
 
             CapturedFrame frame;
+            double capStart = capturer.Now;
             try
             {
                 frame = capturer.Capture();
@@ -312,10 +316,16 @@ public sealed class PlaySession
                 Thread.Sleep(100);
                 continue;
             }
+            double capEnd = capturer.Now;
+            capMs += (capEnd - capStart) * 1000.0;
             frames++;
             double now = frame.TimeSeconds;
 
-            foreach (IGrouping<int, NoteDetection> group in detector.Detect(frame).GroupBy(d => d.Lane))
+            List<NoteDetection> detections = detector.Detect(frame);
+            detMs += (capturer.Now - capEnd) * 1000.0;
+            double trkStart = capturer.Now;
+
+            foreach (IGrouping<int, NoteDetection> group in detections.GroupBy(d => d.Lane))
             {
                 var ready = trackers[group.Key].Observe(now, group.ToList());
                 foreach (ScheduledNote sn in ready)
@@ -369,6 +379,8 @@ public sealed class PlaySession
                 }
             }
 
+            trkMs += (capturer.Now - trkStart) * 1000.0;
+
             Stats.Frames = frames;
             Stats.Scheduled = scheduled;
             Stats.Fired = fired;
@@ -391,6 +403,11 @@ public sealed class PlaySession
         keysDown.Clear();
 
         Log($"終了しました。フレーム数={frames}, スケジュールしたノーツ={scheduled}, 発火したキー(down)={fired}");
+        if (frames > 0)
+        {
+            Log($"段階別コスト平均(ms): capture={capMs / frames:F2} detect={detMs / frames:F2} track={trkMs / frames:F2} period={(capturer.Now - startedAt) / frames * 1000.0:F2}");
+            eventLog?.WriteLine($"# timing capture={capMs / frames:F2} detect={detMs / frames:F2} track={trkMs / frames:F2}");
+        }
         eventLog?.Dispose();
         return 0;
     }
