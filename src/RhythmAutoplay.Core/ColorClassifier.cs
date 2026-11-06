@@ -57,7 +57,7 @@ public static class ColorClassifier
         {
             return PixelColor.None;
         }
-        if (h < 0.045 || h >= 0.925)
+        if (h < 0.045 || h >= 0.90)
         {
             return PixelColor.Red; // 赤〜ピンク（HYPNOSYNC の下段色を含む）
         }
@@ -69,9 +69,9 @@ public static class ColorClassifier
         {
             return PixelColor.Blue;
         }
-        if (h >= 0.70 && h < 0.925)
+        if (h >= 0.70 && h < 0.90)
         {
-            return PixelColor.Purple; // 紫〜マゼンタ
+            return PixelColor.Purple; // 紫（青紫〜マゼンタ手前）
         }
         return PixelColor.None;
     }
