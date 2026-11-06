@@ -38,6 +38,7 @@ public sealed class PlaySession
     private readonly PlayOptions _options;
     private readonly Action<string>? _log;
     private volatile bool _cancelled;
+    private volatile bool _fireStop;
 
     public PlaySession(GameProfile profile, PlayOptions options, Action<string>? log = null)
     {
@@ -133,9 +134,24 @@ public sealed class PlaySession
         double startedAt = capturer.Now;
         var keysDown = new HashSet<string>();
 
-        // 期限の来た入力を先に発火してからキャプチャ・検出に入る
-        // （検出処理のぶん発火が遅れるのを避ける）。
-        void FireDue()
+        // v0.3.17: 発火は専用スレッドが担当する。従来はキャプチャループ内
+        // でポーリングしており、発火遅れ (schedErr) は平均 +9ms / 標準偏差
+        // 5ms / 最大 +39ms まで広がっていた（v0.3.16 の play ログ実測）。
+        // InputScheduler の設計コメントが本来想定していた形に戻す:
+        // 次の発火時刻まで高分解能で待ち、最後の 1ms 強は譲って回す。
+        // scheduler・eventLog・keysDown は ioGate でメインスレッドと排他。
+        var ioGate = new object();
+
+        void LogEvent(string line)
+        {
+            lock (ioGate)
+            {
+                eventLog?.WriteLine(line);
+            }
+        }
+
+        // ioGate を保持した状態で呼ぶこと。
+        void FireDueLocked()
         {
             foreach (ScheduledInput due in scheduler.CollectDue(capturer.Now))
             {
@@ -165,6 +181,38 @@ public sealed class PlaySession
             }
         }
 
+        _fireStop = false;
+        timeBeginPeriod(1);
+        var fireThread = new Thread(() =>
+        {
+            while (!_cancelled && !_fireStop)
+            {
+                double waitMs;
+                lock (ioGate)
+                {
+                    FireDueLocked();
+                    double? next = scheduler.NextTimeSeconds;
+                    waitMs = next is null
+                        ? 4.0
+                        : Math.Clamp((next.Value - capturer.Now) * 1000.0, 0.0, 4.0);
+                }
+                if (waitMs > 1.6)
+                {
+                    Thread.Sleep((int)(waitMs - 1.2));
+                }
+                else if (waitMs > 0.0)
+                {
+                    Thread.Sleep(0);
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal,
+            Name = "RhythmAutoplay.Fire",
+        };
+        fireThread.Start();
+
         // v0.3.16: セッション側の二重発火抑制。従来方式では同じ物理ノーツが
         // 2 つの断片から二重に予約される実測がある（同一レーン・同種で
         // 到達時刻差の中央値 11〜20ms、曲により 69〜131 組）。帯域方式で
@@ -183,8 +231,6 @@ public sealed class PlaySession
             {
                 break;
             }
-
-            FireDue();
 
             CapturedFrame frame;
             try
@@ -215,12 +261,15 @@ public sealed class PlaySession
                         continue;
                     }
                     recentSchedules.Add((signature, sn.THit, now));
-                    foreach (ScheduledInput ev in events)
+                    lock (ioGate)
                     {
-                        scheduler.Enqueue(ev);
+                        foreach (ScheduledInput ev in events)
+                        {
+                            scheduler.Enqueue(ev);
+                        }
                     }
                     scheduled++;
-                    eventLog?.WriteLine(
+                    LogEvent(
                         $"S now={now:F3} lane={group.Key} kind={sn.Kind} dir={sn.Direction} tHit={sn.THit:F3} res={sn.Residual:F4} n={sn.SampleCount} fY={sn.FirstY:F3} ft={sn.FirstTime:F3}");
                     if (_options.DryRun)
                     {
@@ -229,23 +278,34 @@ public sealed class PlaySession
                 }
                 foreach (SuppressedDuplicate sd in trackers[group.Key].DrainSuppressed())
                 {
-                    eventLog?.WriteLine(
+                    LogEvent(
                         $"D lane={group.Key} kind={sd.Kind} tHit={sd.THit:F3}");
                 }
                 foreach (ExpiredTrack ex in trackers[group.Key].DrainExpired())
                 {
-                    eventLog?.WriteLine(
+                    LogEvent(
                         $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4}");
                 }
             }
-
-            FireDue();
 
             Stats.Frames = frames;
             Stats.Scheduled = scheduled;
             Stats.Fired = fired;
             Thread.Sleep(1);
         }
+
+        _fireStop = true;
+        fireThread.Join(2000);
+        timeEndPeriod(1);
+        // 押下中のキーが残っていたら離す（セッション終了時の後始末）。
+        if (!_options.DryRun)
+        {
+            foreach (string key in keysDown)
+            {
+                InputSender.Send(key, false);
+            }
+        }
+        keysDown.Clear();
 
         Log($"終了しました。フレーム数={frames}, スケジュールしたノーツ={scheduled}, 発火したキー(down)={fired}");
         eventLog?.Dispose();
@@ -254,4 +314,10 @@ public sealed class PlaySession
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("winmm.dll")]
+    private static extern uint timeBeginPeriod(uint periodMilliseconds);
+
+    [DllImport("winmm.dll")]
+    private static extern uint timeEndPeriod(uint periodMilliseconds);
 }
