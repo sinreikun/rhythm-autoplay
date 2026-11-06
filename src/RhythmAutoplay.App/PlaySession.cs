@@ -39,8 +39,15 @@ public sealed class PlayOptions
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
     public string? EventLogDirectory { get; init; }
-    /// <summary>追跡エンジン: "track"（全飛行の軌跡追跡、v0.3.11 系）または "band"（帯域トリガー、v0.3.14）。</summary>
-    public string Engine { get; init; } = "track";
+    /// <summary>
+    /// 追跡エンジン: "hybrid"（固定ライン横断+塊の穴埋め、v0.3.49〜）、
+    /// "line"（固定ライン横断、v0.3.42）、"track"（全飛行の軌跡追跡、
+    /// v0.3.11 系）、"band"（帯域トリガー、v0.3.14）。
+    /// 既定は hybrid（v0.3.52）。v0.3.51 までは既定が "track" で、GUI に
+    /// エンジン選択肢が無いため、検証で使った hybrid が GUI 起動では
+    /// 選ばれない不具合があった（マスターの実プレイで発覚）。
+    /// </summary>
+    public string Engine { get; init; } = "hybrid";
 }
 
 /// <summary>プレイ中の統計。GUI がポーリングして表示する。</summary>
