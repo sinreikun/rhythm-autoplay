@@ -137,15 +137,17 @@ public sealed class PlaySession
         // v0.3.17: 発火は専用スレッドが担当する。従来はキャプチャループ内
         // でポーリングしており、発火遅れ (schedErr) は平均 +9ms / 標準偏差
         // 5ms / 最大 +39ms まで広がっていた（v0.3.16 の play ログ実測）。
-        // v0.3.18: 専用スレッドでも 6〜15ms の山が残った。発火処理の中で
-        // SendInput とログのディスク flush が直列し、単一ロック経由で
-        // メインスレッドの大量の X 行書き込みとも競合していたためと見る。
-        // 対策: ロックをスケジューラ用とログ用に分離し、送信はロックの
-        // 外で行い、schedErr は送信前の時刻で測り、F 行はバッファして
-        // 次の発火まで余裕があるときに一括で書き出す。待ちの最終区間は
-        // Sleep(0) の譲渡ではなくスピンで詰める。
+        // v0.3.18: ロック分離・送信のロック外し・F 行のバッファ化で平均
+        // +5.4ms まで改善したが、6〜10ms の山が残った。待ちループが
+        // 4ms 上限のポーリングで、その内側で毎周ログ flush が走って
+        // 周期を伸ばしていたのが原因。
+        // v0.3.19: イベント駆動にする。メインスレッドが予約を入れるたび
+        // fireWake を立て、発火スレッドは次の発火時刻までイベントで
+        // 眠り、最後の 3ms だけスピンで詰める。ログ flush は待ち時間が
+        // 本当に長いとき（>25ms）か、バッファが溜まったときだけ行う。
         var schedGate = new object();
         var logGate = new object();
+        var fireWake = new ManualResetEventSlim(false);
 
         void LogEvent(string line)
         {
@@ -215,26 +217,30 @@ public sealed class PlaySession
                 while (!_cancelled && !_fireStop)
                 {
                     FireDue(logBuffer);
-                    double waitMs;
+                    double realWaitMs;
                     lock (schedGate)
                     {
                         double? next = scheduler.NextTimeSeconds;
-                        waitMs = next is null
-                            ? 4.0
-                            : Math.Clamp((next.Value - capturer.Now) * 1000.0, 0.0, 4.0);
+                        realWaitMs = next is null
+                            ? 50.0
+                            : Math.Max(0.0, (next.Value - capturer.Now) * 1000.0);
                     }
-                    // 次の発火まで余裕があるうちにログを書き出す。
-                    if (waitMs > 1.0)
+                    // ログ flush は待ち時間が本当に長いときだけ。周期の
+                    // 内側で毎回流すと発火チェックそのものが遅れる。
+                    if (realWaitMs > 25.0 || logBuffer.Count >= 64)
                     {
                         FlushLogBuffer(logBuffer);
                     }
-                    if (waitMs > 2.5)
+                    if (realWaitMs > 3.0)
                     {
-                        Thread.Sleep((int)(waitMs - 2.0));
+                        // 新しい予約が入ったらメインスレッドが起こす。
+                        // 寝過ごしても次のループでキューを見直す。
+                        fireWake.Wait((int)(realWaitMs - 2.0));
+                        fireWake.Reset();
                     }
-                    else if (waitMs > 0.0)
+                    else if (realWaitMs > 0.0)
                     {
-                        double deadline = capturer.Now + waitMs / 1000.0;
+                        double deadline = capturer.Now + realWaitMs / 1000.0;
                         while (!_cancelled && !_fireStop && capturer.Now < deadline)
                         {
                             Thread.SpinWait(256);
@@ -309,6 +315,7 @@ public sealed class PlaySession
                             scheduler.Enqueue(ev);
                         }
                     }
+                    fireWake.Set();
                     scheduled++;
                     LogEvent(
                         $"S now={now:F3} lane={group.Key} kind={sn.Kind} dir={sn.Direction} tHit={sn.THit:F3} res={sn.Residual:F4} n={sn.SampleCount} fY={sn.FirstY:F3} ft={sn.FirstTime:F3}");
@@ -336,7 +343,9 @@ public sealed class PlaySession
         }
 
         _fireStop = true;
+        fireWake.Set();
         fireThread.Join(2000);
+        fireWake.Dispose();
         timeEndPeriod(1);
         // 押下中のキーが残っていたら離す（セッション終了時の後始末）。
         if (!_options.DryRun)
