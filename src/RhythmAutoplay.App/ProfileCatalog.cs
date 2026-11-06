@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RhythmAutoplay.Core;
+using ArrowDirection = RhythmAutoplay.Core.ArrowDirection;
 
 namespace RhythmAutoplay.App;
 
