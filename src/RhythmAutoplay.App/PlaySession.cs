@@ -145,6 +145,11 @@ public sealed class PlaySession
         // fireWake を立て、発火スレッドは次の発火時刻までイベントで
         // 眠り、最後の 3ms だけスピンで詰める。ログ flush は待ち時間が
         // 本当に長いとき（>25ms）か、バッファが溜まったときだけ行う。
+        // v0.3.20: それでも schedErr の平均 +5ms と 6〜10ms の山が残った
+        // （バッチ内直列は否定済み: 同時発火グループ内の位置で平均は
+        // 変わらない）。OS のイベント待ちからの復帰遅れが疑わしいため、
+        // スピン区間を最後の 12ms まで広げ、イベント待ちは due の
+        // 10ms 手前で切り上げる。
         var schedGate = new object();
         var logGate = new object();
         var fireWake = new ManualResetEventSlim(false);
@@ -231,11 +236,13 @@ public sealed class PlaySession
                     {
                         FlushLogBuffer(logBuffer);
                     }
-                    if (realWaitMs > 3.0)
+                    if (realWaitMs > 12.0)
                     {
                         // 新しい予約が入ったらメインスレッドが起こす。
                         // 寝過ごしても次のループでキューを見直す。
-                        fireWake.Wait((int)(realWaitMs - 2.0));
+                        // due の 10ms 手前で切り上げ、残りはスピンで詰める
+                        // （OS 待ちの復帰遅れを発火時刻に触れさせない）。
+                        fireWake.Wait((int)(realWaitMs - 10.0));
                         fireWake.Reset();
                     }
                     else if (realWaitMs > 0.0)
