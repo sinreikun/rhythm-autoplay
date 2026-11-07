@@ -80,6 +80,24 @@ public static class ColorClassifier
         return FromHue(h);
     }
 
+    /// <summary>
+    /// 単ライン方式（v0.3.73）の診断用分類: 上部帯のノーツは描画が薄く
+    /// （実測で彩度・明度が下部の半分以下、v≈0.2 / s≈0.4）、通常の床
+    /// （v≥0.30 / s≥0.45）を割る。床を下げた読みを「影」として PL1
+    /// ログに記録し、レーン面（v≈0.16）と分離できることが実ログで
+    /// 確認できてから発火側へ昇格させる。当面は記録専用で、
+    /// 発火判定には使わない。
+    /// </summary>
+    public static PixelColor ClassifyDim(byte r, byte g, byte b)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        if (v < 0.18 || s < 0.28)
+        {
+            return PixelColor.None;
+        }
+        return FromHue(h);
+    }
+
     private static PixelColor FromHue(double h)
     {
         if (h < 0.045 || h >= 0.90)

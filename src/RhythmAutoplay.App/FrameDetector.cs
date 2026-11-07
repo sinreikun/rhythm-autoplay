@@ -10,6 +10,10 @@ namespace RhythmAutoplay.App;
 /// 2) 横長ノーツ（矢印）はレーン幅を超える横 run として別パスで拾い、
 ///    中央行の突出で方向を推定する（実機較正の対象）。
 /// </summary>
+/// <summary>単ライン走査のレーン別状態（PL1 診断用）。マスクのビット位置は色種番号（NoteKind）。</summary>
+public readonly record struct Line1LaneState(
+    int StrictMask, int DimMask, int WhiteCount, bool InWave, int PurpleCount);
+
 public sealed class FrameDetector
 {
     private const int MinBlobPx = 7;
@@ -37,6 +41,13 @@ public sealed class FrameDetector
 
     /// <summary>固定ライン横断方式（engine=line）で使うライン在席走査の有効化。</summary>
     public bool LineMode { get; set; }
+
+    /// <summary>単ライン機械式（engine=line1）で使う単ライン走査の有効化。</summary>
+    public bool SingleLineMode { get; set; }
+
+    /// <summary>直近の Detect の単ライン走査のレーン別状態（PL1 診断用）。</summary>
+    public IReadOnlyList<Line1LaneState> LastLine1States { get; private set; }
+        = Array.Empty<Line1LaneState>();
 
     /// <summary>直近の Detect で見つけた矢印バンドの行範囲（フレーム px）。
     /// オーバレイ／watch 描画用（v0.3.59）。Detect のたびに差し替わる。</summary>
@@ -66,11 +77,128 @@ public sealed class FrameDetector
         {
             DetectLane(frame, lane, pyTop, pyJudge, bands, results);
         }
-        if (LineMode)
+        if (SingleLineMode)
+        {
+            ScanSingleLine(frame, bands, results);
+        }
+        else if (LineMode)
         {
             ScanLines(frame, bands, results);
         }
         return results;
+    }
+
+    /// <summary>
+    /// 単ライン走査（v0.3.73、engine=line1）。判定文字とエフェクトの届かない
+    /// 高さの 1 本のラインについて、各レーンの「色相ファミリー / 白の重なり /
+    /// 波の重なり」を別々に読み、組み合わせ（パターン）として確定した原子色
+    /// だけを在席として出す。白が被ると彩度が落ちて通常分類から外れるため、
+    /// 色の証拠は (a) 通常分類、(b) 波の帯の内側だけ色相のみの緩い分類、の
+    /// 順で集める。パターンの違いは数え方のためだけにあり、押すキーは
+    /// 原子色に共通化される（赤系は全部そのレーンの赤キー）。
+    /// 薄い読み（ClassifyDim）は発火には使わず、影の証拠として
+    /// LastLine1States に記録する（PL1 診断）。紫相の証拠は「未解決の
+    /// 重なり」として数だけ記録し、発火させない。
+    /// </summary>
+    private void ScanSingleLine(
+        CapturedFrame frame, List<(int TopPy, int BottomPy)> bands,
+        List<NoteDetection> results)
+    {
+        LaneGeometry geo = _profile.Geometry;
+        int w = frame.ViewWidth, h = frame.ViewHeight;
+        double lineY = SingleLineTracker.LineY;
+        int pyC = (int)(lineY * h);
+        var states = new Line1LaneState[_profile.LaneCount];
+        for (int lane = 0; lane < _profile.LaneCount; lane++)
+        {
+            double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
+            double halfSpread = geo.LaneWidthAt(_profile.LaneCount, lineY) * w * 0.30;
+            var strictCounts = new int[6];
+            var dimCounts = new int[6];
+            int whiteCount = 0;
+            bool inWave = false;
+            int step = V(2);
+            for (int dpy = -step; dpy <= step; dpy += step)
+            {
+                int py = Math.Clamp(pyC + dpy, 0, h - 1);
+                bool inBand = false;
+                foreach ((int top, int bottom) in bands)
+                {
+                    if (py >= top && py <= bottom)
+                    {
+                        inBand = true;
+                        break;
+                    }
+                }
+                if (inBand)
+                {
+                    inWave = true;
+                }
+                foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
+                {
+                    int px = Math.Clamp((int)(cx * w + off), 0, w - 1);
+                    var (r, g, b) = frame.ViewPixelAt(px, py);
+                    PixelColor c = ColorClassifier.Classify(r, g, b);
+                    if (c == PixelColor.None && inBand)
+                    {
+                        // 波の白の上に半透明で重なったノーツは、色相だけの
+                        // 緩い分類で拾う（波赤・波青などのパターン）。
+                        c = ColorClassifier.ClassifyLoose(r, g, b);
+                    }
+                    if (c != PixelColor.None)
+                    {
+                        strictCounts[(int)c]++;
+                    }
+                    else
+                    {
+                        PixelColor cd = ColorClassifier.ClassifyDim(r, g, b);
+                        if (cd != PixelColor.None)
+                        {
+                            dimCounts[(int)cd]++;
+                        }
+                    }
+                    if (IsWhiteMark(frame, px, py))
+                    {
+                        whiteCount++;
+                    }
+                }
+            }
+            int strictMask = 0, dimMask = 0;
+            foreach (PixelColor pc in new[] { PixelColor.Red, PixelColor.Blue, PixelColor.Yellow })
+            {
+                if (strictCounts[(int)pc] >= 2)
+                {
+                    strictMask |= 1 << (int)ToKind(pc);
+                }
+                if (dimCounts[(int)pc] >= 2)
+                {
+                    dimMask |= 1 << (int)ToKind(pc);
+                }
+            }
+            // パターンの確定: 証拠の最も多い色ファミリーを、そのレーンの
+            // 原子色として 1 件だけ在席にする。白・波の重なりは確定を
+            // 変えない（キーは原子色に共通化されるため）。
+            PixelColor best = PixelColor.None;
+            int bestCount = 1; // 在席には同色 2 標本以上の証拠を要求する
+            foreach (PixelColor pc in new[] { PixelColor.Red, PixelColor.Blue, PixelColor.Yellow })
+            {
+                if (strictCounts[(int)pc] > bestCount)
+                {
+                    bestCount = strictCounts[(int)pc];
+                    best = pc;
+                }
+            }
+            if (best != PixelColor.None)
+            {
+                results.Add(new NoteDetection(
+                    lane, ToKind(best), null, cx, lineY, frame.TimeSeconds,
+                    IsLinePresence: true));
+            }
+            states[lane] = new Line1LaneState(
+                strictMask, dimMask, whiteCount, inWave,
+                strictCounts[(int)PixelColor.Purple]);
+        }
+        LastLine1States = states;
     }
 
     /// <summary>

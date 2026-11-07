@@ -75,7 +75,8 @@ public sealed class PlayOptions
     public string? EventLogDirectory { get; init; }
     /// <summary>
     /// 追跡エンジン: "hybrid"（固定ライン横断+塊の穴埋め、v0.3.49〜）、
-    /// "line"（固定ライン横断、v0.3.42）、"track"（全飛行の軌跡追跡、
+    /// "line"（固定ライン横断、v0.3.42）、"line1"（単ライン機械式、
+    /// v0.3.73）、"track"（全飛行の軌跡追跡、
     /// v0.3.11 系）、"band"（帯域トリガー、v0.3.14）。
     /// 既定は hybrid（v0.3.52）。v0.3.51 までは既定が "track" で、GUI に
     /// エンジン選択肢が無いため、検証で使った hybrid が GUI 起動では
@@ -159,7 +160,9 @@ public sealed class PlaySession
         bool useBand = string.Equals(_options.Engine, "band", StringComparison.OrdinalIgnoreCase);
         bool useLine = string.Equals(_options.Engine, "line", StringComparison.OrdinalIgnoreCase);
         bool useHybrid = string.Equals(_options.Engine, "hybrid", StringComparison.OrdinalIgnoreCase);
+        bool useLine1 = string.Equals(_options.Engine, "line1", StringComparison.OrdinalIgnoreCase);
         detector.LineMode = useLine || useHybrid;
+        detector.SingleLineMode = useLine1;
         if (_options.DenseLines)
         {
             LineCrossingTracker.LineYs = LineCrossingTracker.DenseLineYs;
@@ -187,6 +190,10 @@ public sealed class PlaySession
                     vanishingY: _profile.Geometry.VanishingY,
                     spawnGateY: spawnGateY,
                     commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0)
+                : useLine1
+                ? new SingleLineTracker(
+                    _profile.JudgmentLineY,
+                    vanishingY: _profile.Geometry.VanishingY)
                 : useLine
                 ? new LineCrossingTracker(
                     _profile.JudgmentLineY,
@@ -201,7 +208,7 @@ public sealed class PlaySession
                     commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0);
             trackers[lane].CollectSamples = _options.LogSamples;
         }
-        Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : useHybrid ? "hybrid（ライン主軸+塊の穴埋め）" : useLine ? "line（固定ライン横断）" : "track（軌跡追跡）")}");
+        Log($"追跡エンジン: {(useBand ? "band（帯域トリガー）" : useHybrid ? "hybrid（ライン主軸+塊の穴埋め）" : useLine1 ? "line1（単ライン機械式）" : useLine ? "line（固定ライン横断）" : "track（軌跡追跡）")}");
         var scheduler = new InputScheduler();
         double offsetSeconds = _options.OffsetMilliseconds / 1000.0;
 
@@ -385,6 +392,10 @@ public sealed class PlaySession
         // ライン在席ログ（v0.3.56、診断用）: レーンごとの前フレームの
         // 在席マスク。ビット位置は ライン番号×5 + 色種番号。
         var prevPresenceMask = new int[_profile.LaneCount];
+        // 単ライン状態ログ（v0.3.73、診断用）: ビット 0-2 = 通常読みの
+        // 色マスク、3-5 = 薄い読みの色マスク、6 = 白の重なり、7 = 波の
+        // 重なり、8 = 紫相の証拠あり。
+        var prevLine1Mask = new int[_profile.LaneCount];
         // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
         // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
         // (レーン, 署名, 現在の到達時刻) → タグ。修正のたびに時刻を更新する。
@@ -534,6 +545,23 @@ public sealed class PlaySession
                     {
                         LogEvent($"PL t={now:F3} lane={lane} mask={masks[lane]:X4}");
                         prevPresenceMask[lane] = masks[lane];
+                    }
+                }
+            }
+            if (_options.LogPresence && useLine1)
+            {
+                IReadOnlyList<Line1LaneState> states = detector.LastLine1States;
+                for (int lane = 0; lane < states.Count && lane < prevLine1Mask.Length; lane++)
+                {
+                    Line1LaneState st = states[lane];
+                    int m = st.StrictMask | (st.DimMask << 3)
+                        | (st.WhiteCount >= 2 ? 1 << 6 : 0)
+                        | (st.InWave ? 1 << 7 : 0)
+                        | (st.PurpleCount >= 2 ? 1 << 8 : 0);
+                    if (m != prevLine1Mask[lane])
+                    {
+                        LogEvent($"PL1 t={now:F3} lane={lane} m={m:X4}");
+                        prevLine1Mask[lane] = m;
                     }
                 }
             }
