@@ -32,7 +32,8 @@ public sealed record NoteDetection(
     double X,
     double Y,
     double TimeSeconds,
-    bool IsLinePresence = false);
+    bool IsLinePresence = false,
+    bool InBand = false);
 
 /// <summary>スケジューラへ渡す入力イベント（キー down/up の列）。</summary>
 /// <param name="Tag">

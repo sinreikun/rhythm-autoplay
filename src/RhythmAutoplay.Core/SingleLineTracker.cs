@@ -18,6 +18,16 @@ namespace RhythmAutoplay.Core;
 /// した（帯の中での方向の読みが実際にはほぼ成立しない）。塊追跡は
 /// 降下中の方向読みの最頻値で確定する実績方式で、「方向はタイミング
 /// と別の場所・別の仕組みで読む」という分離自体はこの形で生きる。
+/// v0.3.81: 波救済を追加。実測（run 80 の PLR 分解）では、波に覆われた
+/// 瞬間に単ラインはノーツを見失い、色を問わず落下の主因になっていた
+/// （波の中: 赤 21% / 青 約18% / 黄 48〜65% 落下、波の外: 約0/0/39%）。
+/// 波と一緒に降りるノーツは別の固定ラインでも波の後ろにいるため、
+/// ライン増設では直らない。レーン全体を見る塊追跡なら帯の前後で
+/// ノーツを追える（従来方式が波区間を拾えていた実績）ので、塊追跡の
+/// 色予約を「そのレーンが波に覆われていた証跡がある場合に限り」
+/// 救済として通す。ゲートは従来の穴埋めで実績のある標本 8 以上・
+/// 残差 0.006 以下と、ライン発火への到達時刻 ±0.12 秒の重複排除。
+/// 波の外では従来どおり機械式のみで発火する。
 /// </summary>
 public sealed class SingleLineTracker : ILaneTracker
 {
@@ -38,11 +48,27 @@ public sealed class SingleLineTracker : ILaneTracker
     private const double CrossingRate = 1.70;
     private const double RefractorySeconds = 0.05;
 
+    // 波救済のゲート（v0.3.81）。標本・残差は従来の穴埋め（v0.3.50）の
+    // 実績値、抑制窓はライン発火の残差 IQR（約 19ms）を十分に覆う幅。
+    private const double RescueSuppressWindowSeconds = 0.12;
+    private const int RescueMinSamples = 8;
+    private const double RescueMaxResidual = 0.006;
+    // 波の証跡とみなす範囲: 候補のライン横断時刻（到達 − リード）の
+    // 前後この秒数以内に、同レーン同色の「帯の中の塊」が見えていたら
+    // そのノーツは波に隠れていたと判定する。
+    private const double BandAssocWindowSeconds = 0.45;
+    private const double AcceptedLifetimeSeconds = 1.5;
+    private const double SightingLifetimeSeconds = 2.5;
+
     private readonly double _judgmentW;
     private readonly double _vanishingY;
     private readonly LaneNoteTracker _arrowTracker;
+    private readonly LaneNoteTracker _rescueTracker;
     private readonly bool[] _prevPresence = new bool[5];
     private readonly double[] _lastCrossAt = new double[5];
+    private readonly List<(NoteKind Kind, double THit, double At)> _accepted = new();
+    private readonly List<(NoteKind Kind, double At)> _bandSightings = new();
+    private readonly List<SuppressedDuplicate> _suppressed = new();
     private double _lastFrameTime = double.NaN;
     private double _frameDelta = 1.0 / 31;
 
@@ -56,6 +82,13 @@ public sealed class SingleLineTracker : ILaneTracker
         _vanishingY = vanishingY;
         // 矢印の委譲先は従来ライン方式と同一の構成にする。
         _arrowTracker = new LaneNoteTracker(
+            judgmentY,
+            vanishingY: vanishingY,
+            spawnGateY: spawnGateY,
+            scheduleHorizonSeconds: 1.2,
+            commitWindowSeconds: commitWindowSeconds);
+        // 波救済の塊追跡も同一構成。色ノーツだけを入力する。
+        _rescueTracker = new LaneNoteTracker(
             judgmentY,
             vanishingY: vanishingY,
             spawnGateY: spawnGateY,
@@ -76,6 +109,7 @@ public sealed class SingleLineTracker : ILaneTracker
         {
             _collectSamples = value;
             _arrowTracker.CollectSamples = value;
+            _rescueTracker.CollectSamples = value;
         }
     }
 
@@ -138,20 +172,98 @@ public sealed class SingleLineTracker : ILaneTracker
             {
                 _lastCrossAt[k] = timeSeconds;
                 double tHit = crossTime + LeadFrom(LineY);
-                scheduled.Add(new ScheduledNote(
+                var fire = new ScheduledNote(
                     (NoteKind)k, null, tHit, 0.0, 1,
-                    LineY, crossTime));
+                    LineY, crossTime);
+                scheduled.Add(fire);
+                _accepted.Add((fire.Kind, fire.THit, timeSeconds));
             }
         }
         Array.Copy(presence, _prevPresence, presence.Length);
+        _accepted.RemoveAll(r => timeSeconds - r.At > AcceptedLifetimeSeconds);
+
+        // 波救済（v0.3.81）: 色ノーツの塊を追跡し、波に隠れていた証跡が
+        // ある候補だけを通す。帯の中の塊の目撃はこのレーンの検出から
+        // 集める（検出器が塊の行範囲と帯の重なりで InBand を立てる）。
+        var rescueInput = new List<NoteDetection>();
+        foreach (NoteDetection d in laneDetections)
+        {
+            if (d.IsLinePresence || d.Kind == NoteKind.Arrow || d.Kind == NoteKind.Purple)
+            {
+                continue;
+            }
+            rescueInput.Add(d);
+            if (d.InBand)
+            {
+                _bandSightings.Add((d.Kind, d.TimeSeconds));
+            }
+        }
+        _bandSightings.RemoveAll(s => timeSeconds - s.At > SightingLifetimeSeconds);
+        foreach (ScheduledNote sn in _rescueTracker.Observe(timeSeconds, rescueInput))
+        {
+            bool covered = false;
+            foreach ((NoteKind kind, double tHit, double _) in _accepted)
+            {
+                if (kind == sn.Kind
+                    && Math.Abs(tHit - sn.THit) <= RescueSuppressWindowSeconds)
+                {
+                    covered = true;
+                    break;
+                }
+            }
+            bool confident = sn.SampleCount >= RescueMinSamples
+                && sn.Residual <= RescueMaxResidual;
+            double crossAt = sn.THit - LeadFrom(LineY);
+            bool waveAssociated = false;
+            foreach ((NoteKind kind, double at) in _bandSightings)
+            {
+                if (kind == sn.Kind
+                    && Math.Abs(at - crossAt) <= BandAssocWindowSeconds)
+                {
+                    waveAssociated = true;
+                    break;
+                }
+            }
+            if (!covered && confident && waveAssociated)
+            {
+                scheduled.Add(sn);
+                _accepted.Add((sn.Kind, sn.THit, timeSeconds));
+            }
+            else
+            {
+                _suppressed.Add(new SuppressedDuplicate(sn.Kind, sn.THit));
+            }
+        }
         return scheduled;
     }
 
-    public List<ExpiredTrack> DrainExpired() => _arrowTracker.DrainExpired();
+    public List<ExpiredTrack> DrainExpired()
+    {
+        var drained = _arrowTracker.DrainExpired();
+        drained.AddRange(_rescueTracker.DrainExpired());
+        return drained;
+    }
 
-    public List<SuppressedDuplicate> DrainSuppressed() => _arrowTracker.DrainSuppressed();
+    public List<SuppressedDuplicate> DrainSuppressed()
+    {
+        var drained = _arrowTracker.DrainSuppressed();
+        drained.AddRange(_rescueTracker.DrainSuppressed());
+        drained.AddRange(_suppressed);
+        _suppressed.Clear();
+        return drained;
+    }
 
-    public List<RevisedNote> DrainRevisions() => _arrowTracker.DrainRevisions();
+    public List<RevisedNote> DrainRevisions()
+    {
+        var drained = _arrowTracker.DrainRevisions();
+        drained.AddRange(_rescueTracker.DrainRevisions());
+        return drained;
+    }
 
-    public List<(int Id, double Time, double Y)> DrainSampleLog() => _arrowTracker.DrainSampleLog();
+    public List<(int Id, double Time, double Y)> DrainSampleLog()
+    {
+        var drained = _arrowTracker.DrainSampleLog();
+        drained.AddRange(_rescueTracker.DrainSampleLog());
+        return drained;
+    }
 }

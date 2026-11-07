@@ -415,8 +415,20 @@ public sealed class FrameDetector
             // 遅い序盤・終盤だけ予約され、矢印＝下線という点特徴は全編通った）。
             // 先端は点特徴として法則に従う。
             double bottomY = runLast / (double)h;
+            // 塊の行範囲が矢印の帯と重なるか（v0.3.81: line1 の波救済が
+            // 「波に覆われていた塊か」を判定するために使う）。
+            bool blobInBand = false;
+            foreach ((int top, int bottom) in bands)
+            {
+                if (runLast >= top - V(4) && runStart <= bottom + V(4))
+                {
+                    blobInBand = true;
+                    break;
+                }
+            }
             results.Add(new NoteDetection(
-                lane, ToKind(runColor), null, centerX, bottomY, frame.TimeSeconds));
+                lane, ToKind(runColor), null, centerX, bottomY, frame.TimeSeconds,
+                InBand: blobInBand));
         }
 
         // 1 行の色を 3 列（中心と左右 ±30% レーン幅）から決める（v0.3.36）。
