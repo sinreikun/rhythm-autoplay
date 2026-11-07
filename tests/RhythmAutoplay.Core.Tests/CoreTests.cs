@@ -1080,18 +1080,47 @@ public class SingleLineTrackerTests
         => new(judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.1);
 
     [Fact]
-    public void SingleCrossing_SchedulesImmediatelyWithPredictedHit()
+    public void SingleCrossing_SchedulesOnNextFrameWithPredictedHit()
     {
         var tracker = NewTracker();
         // フレーム間隔 1/60: t=0.9833 は不在、t=1.0000 で在席が立つ。
         // 横断時刻 = 1.0 - (1/60)/2 = 0.99167。
         // 到達 = 横断 + (W(0.665)-W(0.941))/1.70 + 0.006
         //      = 0.99167 + (3.63636-1.81488)/1.70 + 0.006 = 2.06913。
+        // v0.3.83 から確定は 1 フレーム保留（行補間の材料待ち）。
+        // 行の検出が無い場合は従来の集約中点＋従来補正で確定する。
         Assert.Empty(tracker.Observe(0.9833, new List<NoteDetection>()));
-        var got = tracker.Observe(1.0, new List<NoteDetection> { Presence(1.0, NoteKind.Red) });
+        Assert.Empty(tracker.Observe(1.0, new List<NoteDetection> { Presence(1.0, NoteKind.Red) }));
+        var got = tracker.Observe(1.0167, new List<NoteDetection>());
         Assert.Single(got);
         Assert.Equal(NoteKind.Red, got[0].Kind);
         Assert.True(Math.Abs(got[0].THit - 2.0691) < 0.002, $"tHit={got[0].THit:F4}");
+    }
+
+    [Fact]
+    public void RowEdges_InterpolateCrossingTime()
+    {
+        // 行別の立ち上がり（上行→集約・中行→下行）を各行のリードで
+        // 換算して平均し、補間用補正 -0.008 で確定する (v0.3.83)。
+        // 上行エッジ中点 0.98333 + リード 0.01525 = 0.99858
+        // 中行エッジ中点 1.01667                  = 1.01667
+        // 下行エッジ中点 1.05000 − リード 0.01495 = 1.03505
+        // 平均 1.01677 → 到達 = 1.01677 + 1.07146 − 0.008 = 2.08023。
+        // 集約のみ（2.09413）より約 14ms 早まるのが補間の形。
+        var tracker = NewTracker();
+        NoteDetection Row(double t, int row) => new(
+            0, NoteKind.Red, null, 0.4,
+            SingleLineTracker.LineY + row * SingleLineTracker.RowStepY, t,
+            IsLinePresence: true, PresenceRow: row);
+        Assert.Empty(tracker.Observe(0.9667, new List<NoteDetection>()));
+        Assert.Empty(tracker.Observe(1.0000, new List<NoteDetection> { Row(1.0, -1) }));
+        Assert.Empty(tracker.Observe(1.0333, new List<NoteDetection>
+        {
+            Presence(1.0333, NoteKind.Red), Row(1.0333, 0),
+        }));
+        var got = tracker.Observe(1.0667, new List<NoteDetection> { Row(1.0667, +1) });
+        Assert.Single(got);
+        Assert.True(Math.Abs(got[0].THit - 2.0802) < 0.002, $"tHit={got[0].THit:F4}");
     }
 
     [Fact]
@@ -1118,8 +1147,9 @@ public class SingleLineTrackerTests
         count += tracker.Observe(1.0333, new List<NoteDetection> { Presence(1.0333, NoteKind.Yellow) }).Count;
         Assert.Equal(1, count);
         count += tracker.Observe(1.0500, new List<NoteDetection>()).Count;
-        // 100ms 後の再点灯は新しいノーツとして発火する。
+        // 100ms 後の再点灯は新しいノーツとして発火する（確定は次フレーム）。
         count += tracker.Observe(1.1000, new List<NoteDetection> { Presence(1.1, NoteKind.Yellow) }).Count;
+        count += tracker.Observe(1.1167, new List<NoteDetection>()).Count;
         Assert.Equal(2, count);
     }
 

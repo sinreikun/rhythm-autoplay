@@ -26,6 +26,17 @@ namespace RhythmAutoplay.Core;
 /// （v0.3.80 の 1015〜1044 から悪化）。CRINGE は 14 / 20 と下がったが
 /// 犠牲が大きい。密な譜面では塊の軌跡は証拠にならない、が結論。
 /// 波に隠れたノーツの回収はこの方式では閉鎖する。
+/// v0.3.83: サブフレーム補間を追加。発火ラインの走査 3 行（±2px）は
+/// 約 15ms ずつずれて横断されるため、行別の立ち上がり時刻を各行の
+/// リードで発火ライン横断へ換算して平均すると、横断時刻の量子化
+/// 誤差（フレーム間隔の中点近似）が減る。PLR 生ログ（run 80/83/84、
+/// 約 2,900 件）でのオフライン検証では残差 IQR 18.5 → 12.9ms、
+/// ±20ms 内 89% → 96%。行別の読みは集約より約 14ms 遅れて立つ
+/// （行内 2/3 標本が必要なため）ので、補間時の補正は -0.008 とする。
+/// 発火の引き金は従来どおり集約在席の立ち上がりで、補間は時刻の
+/// 精密化だけを行う（発火の有無・本数は変えない）。下行の立ち上がり
+/// は次フレームで届くため、予約は 1 フレーム保留してから確定する
+/// （到達まで約 1.07 秒あるので実害はない）。
 /// </summary>
 public sealed class SingleLineTracker : ILaneTracker
 {
@@ -41,6 +52,19 @@ public sealed class SingleLineTracker : ILaneTracker
     /// +0.006 へ移した (v0.3.75)。</summary>
     public static double CorrectionSeconds { get; set; } = 0.006;
 
+    /// <summary>補間時の系統補正 [秒]（v0.3.83）。行別の立ち上がりは
+    /// 集約在席より約 14ms 遅れる（PLR 実測）ため、集約用の +0.006 に
+    /// 対して補間用は -0.008 とする。</summary>
+    public static double InterpCorrectionSeconds { get; set; } = -0.008;
+
+    /// <summary>走査 3 行の間隔（画面比率）。検出器の実間隔は 2 表示
+    /// px で、内容高さ約 1,009〜1,048px に対して約 0.00195。</summary>
+    public const double RowStepY = 0.00195;
+
+    // 補間の対応付け窓: 行の立ち上がりを換算した推定が、集約の横断
+    // 時刻からこの範囲内にあればその横断のものとして採用する。
+    private const double AssocWindowSeconds = 0.06;
+
     // 横断観測の実効レート。在席の立ち上がりという観測量に固有の値で、
     // 従来ラインの実測で固定した 1.70 をそのまま使う（v0.3.44）。
     private const double CrossingRate = 1.70;
@@ -51,6 +75,10 @@ public sealed class SingleLineTracker : ILaneTracker
     private readonly LaneNoteTracker _arrowTracker;
     private readonly bool[] _prevPresence = new bool[5];
     private readonly double[] _lastCrossAt = new double[5];
+    private readonly double[] _rowLead = new double[3];
+    private readonly bool[,] _prevRowPresence = new bool[5, 3];
+    private readonly List<(int Kind, int Row, double EdgeMid)> _rowEdges = new();
+    private readonly List<(int Kind, double Cross0, double CreatedAt)> _pendings = new();
     private double _lastFrameTime = double.NaN;
     private double _frameDelta = 1.0 / 31;
 
@@ -72,6 +100,10 @@ public sealed class SingleLineTracker : ILaneTracker
         for (int k = 0; k < 5; k++)
         {
             _lastCrossAt[k] = double.NegativeInfinity;
+        }
+        for (int r = 0; r < 3; r++)
+        {
+            _rowLead[r] = (W(LineY + (r - 1) * RowStepY) - W(LineY)) / CrossingRate;
         }
     }
 
@@ -121,20 +153,97 @@ public sealed class SingleLineTracker : ILaneTracker
         // 傾きペアは v0.3.77 / v0.3.78 で 2 度実測し、上方の在席信号の
         // 点滅とエピソード融合のためペアの 83〜89% がゴミになった。
         // 傾き路線は閉鎖し、単ライン＋固定レートが line1 の完成形。
+        // 集約在席 (PresenceRow なし) が発火の引き金、行別の在席
+        // (PresenceRow -1/0/+1) は横断時刻の補間専用（v0.3.83）。
         var presence = new bool[5];
+        var rowPresence = new bool[5, 3];
         foreach (NoteDetection d in laneDetections)
         {
             if (!d.IsLinePresence || d.Kind == NoteKind.Arrow || d.Kind == NoteKind.Purple)
             {
                 continue;
             }
-            if (Math.Abs(d.Y - LineY) < 0.01)
+            if (Math.Abs(d.Y - LineY) >= 0.01)
+            {
+                continue;
+            }
+            if (d.PresenceRow is int pr && pr >= -1 && pr <= 1)
+            {
+                rowPresence[(int)d.Kind, pr + 1] = true;
+            }
+            else
             {
                 presence[(int)d.Kind] = true;
             }
         }
         // 横断時刻は「不在→在席」の中点に置く（従来ラインと同じ約束）。
         double crossTime = timeSeconds - _frameDelta / 2;
+
+        // 行の立ち上がりを記録する（補間の材料）。古いものは捨てる。
+        for (int k = 0; k < 5; k++)
+        {
+            if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
+            {
+                continue;
+            }
+            for (int r = 0; r < 3; r++)
+            {
+                if (rowPresence[k, r] && !_prevRowPresence[k, r])
+                {
+                    _rowEdges.Add((k, r, crossTime));
+                }
+                _prevRowPresence[k, r] = rowPresence[k, r];
+            }
+        }
+        _rowEdges.RemoveAll(e => timeSeconds - e.EdgeMid > 0.2);
+
+        // 前フレームまでに生まれた保留を確定する。下行の立ち上がりは
+        // 集約の横断より約 15ms 遅れて次フレームで届くため、1 フレーム
+        // 待ってから行推定を平均する。行推定が 1 つも対応しなければ
+        // 従来どおり集約の中点＋従来補正で確定する。
+        for (int i = _pendings.Count - 1; i >= 0; i--)
+        {
+            (int kind, double cross0, double createdAt) = _pendings[i];
+            if (timeSeconds <= createdAt)
+            {
+                continue;
+            }
+            _pendings.RemoveAt(i);
+            double sum = 0;
+            int n = 0;
+            for (int r = 0; r < 3; r++)
+            {
+                foreach ((int ek, int er, double edgeMid) in _rowEdges)
+                {
+                    if (ek == kind && er == r
+                        && Math.Abs(edgeMid + _rowLead[r] - cross0) <= AssocWindowSeconds)
+                    {
+                        sum += edgeMid + _rowLead[r];
+                        n++;
+                        break;
+                    }
+                }
+            }
+            double tHit;
+            double crossEst;
+            if (n > 0)
+            {
+                crossEst = sum / n;
+                tHit = crossEst + (W(LineY) - _judgmentW) / CrossingRate
+                    + InterpCorrectionSeconds;
+            }
+            else
+            {
+                crossEst = cross0;
+                tHit = cross0 + LeadFrom(LineY);
+            }
+            scheduled.Add(new ScheduledNote(
+                (NoteKind)kind, null, tHit, 0.0, 1,
+                LineY, crossEst));
+        }
+
+        // 集約の立ち上がりが新しい横断。確定は次フレームの Observe で
+        // 行うため、ここでは保留に積む。
         for (int k = 0; k < 5; k++)
         {
             if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
@@ -145,10 +254,7 @@ public sealed class SingleLineTracker : ILaneTracker
                 && timeSeconds - _lastCrossAt[k] > RefractorySeconds)
             {
                 _lastCrossAt[k] = timeSeconds;
-                double tHit = crossTime + LeadFrom(LineY);
-                scheduled.Add(new ScheduledNote(
-                    (NoteKind)k, null, tHit, 0.0, 1,
-                    LineY, crossTime));
+                _pendings.Add((k, crossTime, timeSeconds));
             }
         }
         Array.Copy(presence, _prevPresence, presence.Length);

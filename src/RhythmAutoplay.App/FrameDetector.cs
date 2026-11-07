@@ -136,6 +136,7 @@ public sealed class FrameDetector
             double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
             double halfSpread = geo.LaneWidthAt(_profile.LaneCount, lineY) * w * 0.30;
             var strictCounts = new int[6];
+            var rowStrictCounts = new int[3, 6];
             var dimCounts = new int[6];
             int whiteCount = 0;
             bool inWave = false;
@@ -181,6 +182,7 @@ public sealed class FrameDetector
                     if (c != PixelColor.None)
                     {
                         strictCounts[(int)c]++;
+                        rowStrictCounts[rowIdx, (int)c]++;
                     }
                     else
                     {
@@ -232,6 +234,35 @@ public sealed class FrameDetector
                 results.Add(new NoteDetection(
                     lane, ToKind(best), null, cx, lineY, frame.TimeSeconds,
                     IsLinePresence: true));
+            }
+            // 行ごとの在席も出す（v0.3.83）。発火ラインの 3 行は約 15ms
+            // ずつずれて横断されるため、行別の立ち上がり時刻を平均すると
+            // 横断時刻の量子化誤差が減る（サブフレーム補間）。確定規則は
+            // 行内でも同じ（同色 2 標本以上・勝者総取り）。集約の在席が
+            // 横断の引き金で、行別はその時刻の精密化にだけ使う。
+            if (lineY == SingleLineTracker.LineY)
+            {
+                for (int r = 0; r < 3; r++)
+                {
+                    PixelColor rowBest = PixelColor.None;
+                    int rowBestCount = 1;
+                    foreach (PixelColor pc in new[] { PixelColor.Red, PixelColor.Blue, PixelColor.Yellow })
+                    {
+                        if (rowStrictCounts[r, (int)pc] > rowBestCount)
+                        {
+                            rowBestCount = rowStrictCounts[r, (int)pc];
+                            rowBest = pc;
+                        }
+                    }
+                    if (rowBest != PixelColor.None)
+                    {
+                        int py = Math.Clamp(pyC + (r - 1) * step, 0, h - 1);
+                        results.Add(new NoteDetection(
+                            lane, ToKind(rowBest), null, cx, py / (double)h,
+                            frame.TimeSeconds,
+                            IsLinePresence: true, PresenceRow: r - 1));
+                    }
+                }
             }
             states[lane] = new Line1LaneState(
                 strictMask, dimMask, whiteCount, inWave,
