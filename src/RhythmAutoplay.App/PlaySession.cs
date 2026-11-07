@@ -509,8 +509,10 @@ public sealed class PlaySession
                 now, frame.Width, frame.Height, detections, detector.LastBands,
                 viewUpcoming.ToList());
             LatestView = view;
-            if (_options.Watch)
+            if (_options.Watch && now - startedAt >= 5.0)
             {
+                // 開始 5 秒は曲のイントロ演出（ARE YOU…）がバンドや在席に
+                // 混ざるため保存対象から外す（v0.3.60、初回実走の実測）。
                 var entry = (now, (byte[])frame.Bgra.Clone(), frame.Width, frame.Height, view);
                 watchRing.Enqueue(entry);
                 while (watchRing.Count > 10)
@@ -524,8 +526,10 @@ public sealed class PlaySession
                     SaveWatchFrame(entry, "wave",
                         $"bands={detector.LastBands.Count} pres={presenceCount}");
                 }
-                else if (presenceCount >= 12 && now - lastDenseSave >= 2.5)
+                else if (presenceCount >= 8 && now - lastDenseSave >= 2.5)
                 {
+                    // 在席セルは最大 12（4 レーン × 3 ライン）。v0.3.59 の
+                    // 閾値 12 は満杯条件で 1 回しか発火しなかった。
                     lastDenseSave = now;
                     SaveWatchFrame(entry, "dense", $"pres={presenceCount}");
                 }
@@ -635,10 +639,13 @@ public sealed class PlaySession
                 {
                     LogEvent(
                         $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4} why={ex.FailReason} dz={ex.DeathbedReason} blr={ex.BestLineResidual:F4}");
-                    if (_options.Watch && !ex.Scheduled && now - lastExpireSave >= 0.8)
+                    if (_options.Watch && !ex.Scheduled && ex.TotalSamples >= 2
+                        && now - startedAt >= 5.0 && now - lastExpireSave >= 0.8)
                     {
                         // 未予約のまま失効した鎖 = 取りこぼしの瞬間。鎖が
-                        // 最後に見えた時刻のフレームを残す。
+                        // 最後に見えた時刻のフレームを残す。標本 1 個だけの
+                        // 断片は反響・ちらつきが大半で、初回実走では保存
+                        // 上限 80 枚が 38 秒で尽きたため対象から外す。
                         var e = RingFrameNear(ex.LastSeenTime);
                         if (e != null)
                         {
