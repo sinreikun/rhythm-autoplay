@@ -84,6 +84,16 @@ public sealed class WindowCapturer : IDisposable
         double time = Now;
         bool viaPrintWindow = UsePrintWindow && !_printWindowFailed
             && CaptureViaPrintWindow(width, height, origin);
+        if (viaPrintWindow)
+        {
+            // PrintWindow の中身は「呼び出し中にゲームが描いた現在状態」で、
+            // 開始時刻で打刻すると全フレームが描画所要時間（実測 ~26ms）
+            // だけ未来の内容を持ち、横断時刻が一律にずれて判定が
+            // GREAT/CRINGE に流れた（v0.3.63 実走: GREAT 108 / CRINGE 75）。
+            // 画面方式は「既に表示済みのフレームの複写」なので開始打刻で
+            // 較正されているが、PrintWindow 方式では完了時刻で打刻する。
+            time = Now;
+        }
         if (!viaPrintWindow)
         {
             IntPtr screenDc = GetDC(IntPtr.Zero);
