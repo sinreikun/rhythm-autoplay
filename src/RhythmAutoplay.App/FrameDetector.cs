@@ -15,6 +15,21 @@ public sealed class FrameDetector
     private const int MinBlobPx = 7;
     private const double WideFactor = 1.7;
 
+    // 画素絶対の定数はすべて基準解像度 1280x720 で較正されている。
+    // 実際のフレーム寸法との比で読み替えることで、プリセットが画面
+    // サイズに追従する（v0.3.69、マスター指摘: 遊ぶ人が好きに変える）。
+    // 将来はプロファイル側に基準解像度を持たせる。
+    private const double BaseFrameWidth = 1280.0;
+    private const double BaseFrameHeight = 720.0;
+    private double _sx = 1.0; // 横方向の倍率（行内カウント用）
+    private double _sy = 1.0; // 縦方向の倍率（行間・高さ用）
+
+    /// <summary>縦の画素量を現在のフレーム高へ読み替える。</summary>
+    private int V(double pxAtBase) => Math.Max(1, (int)Math.Round(pxAtBase * _sy));
+
+    /// <summary>横の画素カウントを現在のフレーム幅へ読み替える。</summary>
+    private int H(double countAtBase) => Math.Max(1, (int)Math.Round(countAtBase * _sx));
+
     private readonly GameProfile _profile;
 
     public FrameDetector(GameProfile profile) => _profile = profile;
@@ -32,6 +47,8 @@ public sealed class FrameDetector
         var results = new List<NoteDetection>();
         LaneGeometry geo = _profile.Geometry;
         int w = frame.Width, h = frame.Height;
+        _sx = w / BaseFrameWidth;
+        _sy = h / BaseFrameHeight;
         int pyTop = (int)(geo.TopY * h);
         int pyJudge = (int)(_profile.JudgmentLineY * h);
 
@@ -77,7 +94,8 @@ public sealed class FrameDetector
                 // 1 標本でも在席にすると単画素のちらつきが横断イベントに
                 // なり、1 横断だけの鎖が大量に生まれた（v0.3.42 実測）。
                 var counts = new int[6];
-                for (int dpy = -2; dpy <= 2; dpy += 2)
+                int step = V(2);
+                for (int dpy = -step; dpy <= step; dpy += step)
                 {
                     int py = Math.Clamp(pyC + dpy, 0, h - 1);
                     // 矢印バンドの内側では、通常分類で取れない場合に限り
@@ -144,9 +162,10 @@ public sealed class FrameDetector
 
         bool InBand(int py)
         {
+            int margin = V(4);
             foreach ((int top, int bottom) in bands)
             {
-                if (py >= top - 4 && py <= bottom + 4)
+                if (py >= top - margin && py <= bottom + margin)
                 {
                     return true;
                 }
@@ -174,7 +193,7 @@ public sealed class FrameDetector
             // 出現・移動・残差ゲートが捌く）。
             bool upperZone = runLast / (double)h < 0.72;
             int minColored = upperZone ? 2 : 3;
-            int minBlobPx = upperZone ? 4 : MinBlobPx;
+            int minBlobPx = upperZone ? V(4) : V(MinBlobPx);
             if (runColor == PixelColor.None || coloredPx < minColored
                 || (runLast - runStart < minBlobPx && coloredPx < minBlobPx))
             {
@@ -186,8 +205,8 @@ public sealed class FrameDetector
             // 発光は 100px 以上になるため、上限は画面高の 8.5% に置く。
             // 矢印の帯を橋渡しした塊は帯の高さぶん長くなるため上限を緩める。
             int maxBlobPx = bridged
-                ? Math.Max(40, (int)(frame.Height * 0.12))
-                : Math.Max(40, (int)(frame.Height * 0.085));
+                ? Math.Max(V(40), (int)(frame.Height * 0.12))
+                : Math.Max(V(40), (int)(frame.Height * 0.085));
             if (runLast - runStart > maxBlobPx)
             {
                 return;
@@ -282,7 +301,7 @@ public sealed class FrameDetector
             else
             {
                 gap += 2;
-                if (gap > 2)
+                if (gap > V(2))
                 {
                     Flush();
                     runColor = PixelColor.None;
@@ -381,9 +400,9 @@ public sealed class FrameDetector
                 else
                 {
                     // 白シェブロンは字形ごとに暗い隙間が空くため、
-                    // 隙間 30px までは同じ連なりとして扱う（v0.3.1）。
+                    // 隙間 30px（基準解像度）までは同じ連なりとして扱う（v0.3.1）。
                     curGap += 2;
-                    if (curGap > 30)
+                    if (curGap > V(30))
                     {
                         curStart = -1;
                         curGap = 0;
@@ -397,7 +416,7 @@ public sealed class FrameDetector
             // （マスター実機目視）。本物の波は白シェブロンを必ず含むため、
             // 白印がほぼ無い行は候補行にしない。
             if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0
-                && whiteCount >= 3 && whiteCount * 10 >= markCount)
+                && whiteCount >= Math.Max(3, H(3)) && whiteCount * 10 >= markCount)
             {
                 // 方向推定の統計は白印だけで取る（白印が無い行は全印にフォールバック）。
                 double meanRx = whiteCount > 0 ? rxSumWhite / whiteCount : rxSum / markCount;
@@ -415,7 +434,7 @@ public sealed class FrameDetector
         {
             int j = i;
             int widest = i;
-            while (j + 1 < candidateRows.Count && candidateRows[j + 1].Py - candidateRows[j].Py <= 20)
+            while (j + 1 < candidateRows.Count && candidateRows[j + 1].Py - candidateRows[j].Py <= V(20))
             {
                 j++;
                 if (candidateRows[j].X1 - candidateRows[j].X0 > candidateRows[widest].X1 - candidateRows[widest].X0)
@@ -444,7 +463,7 @@ public sealed class FrameDetector
                         bestSplit = k;
                     }
                 }
-                if (bestGap >= 12 && bestSplit - i + 1 >= 2)
+                if (bestGap >= V(12) && bestSplit - i + 1 >= 2)
                 {
                     patternEnd = bestSplit;
                 }
@@ -457,7 +476,7 @@ public sealed class FrameDetector
             {
                 whiteSum += candidateRows[k].WhiteCount;
             }
-            if (whiteSum < 12)
+            if (whiteSum < Math.Max(12, H(12)))
             {
                 i = j + 1;
                 continue;
