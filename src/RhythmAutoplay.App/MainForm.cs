@@ -44,6 +44,7 @@ public sealed class MainForm : Form
         _effectiveProfile = ApplyOverride(_baseProfile);
         _overlay = new OverlayForm(() => _effectiveProfile);
         _overlay.GeometryChanged += OnGeometryChanged;
+        _overlay.ViewProvider = () => _session?.LatestView;
 
         BuildUi();
         RestoreWindowPosition();

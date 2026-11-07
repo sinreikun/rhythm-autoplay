@@ -22,6 +22,11 @@ public sealed class FrameDetector
     /// <summary>固定ライン横断方式（engine=line）で使うライン在席走査の有効化。</summary>
     public bool LineMode { get; set; }
 
+    /// <summary>直近の Detect で見つけた矢印バンドの行範囲（フレーム px）。
+    /// オーバレイ／watch 描画用（v0.3.59）。Detect のたびに差し替わる。</summary>
+    public IReadOnlyList<(int TopPy, int BottomPy)> LastBands { get; private set; }
+        = Array.Empty<(int, int)>();
+
     public List<NoteDetection> Detect(CapturedFrame frame)
     {
         var results = new List<NoteDetection>();
@@ -35,6 +40,7 @@ public sealed class FrameDetector
         // 2026-11-06）、レーンパスでは帯の内側だけ緩い分類と橋渡しを使う。
         var bands = new List<(int TopPy, int BottomPy)>();
         DetectArrows(frame, pyTop, pyJudge, results, bands);
+        LastBands = bands;
         for (int lane = 0; lane < _profile.LaneCount; lane++)
         {
             DetectLane(frame, lane, pyTop, pyJudge, bands, results);

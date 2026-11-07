@@ -21,6 +21,10 @@ public sealed class OverlayForm : Form
     /// <summary>ドラッグで形状が変わった時に、新しいプロファイルで通知する。</summary>
     public event Action<GameProfile>? GeometryChanged;
 
+    /// <summary>ライブ検出表示用のフレーム提供元（v0.3.59）。
+    /// セッション実行中だけ値が返る。編集モードでは描かない。</summary>
+    public Func<DetectionView?>? ViewProvider { get; set; }
+
     public OverlayForm(Func<GameProfile> profileProvider)
     {
         _profileProvider = profileProvider;
@@ -98,6 +102,13 @@ public sealed class OverlayForm : Form
         Point jl1 = ToPoint(geo.CenterX - judgeHalf, profile.JudgmentLineY);
         Point jl2 = ToPoint(geo.CenterX + judgeHalf, profile.JudgmentLineY);
         g.DrawLine(judgePen, jl1, jl2);
+
+        // ライブ検出表示（v0.3.59）: セッション中の検出状態を重ねる。
+        // 在席セル・矢印バンド・予約マーカーを DetectionPainter で描く。
+        if (!_editMode && ViewProvider?.Invoke() is { } view)
+        {
+            DetectionPainter.Draw(g, view, profile, ClientSize.Width, ClientSize.Height, null);
+        }
 
         if (_editMode)
         {

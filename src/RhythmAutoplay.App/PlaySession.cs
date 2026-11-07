@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using RhythmAutoplay.Core;
 using ArrowDirection = RhythmAutoplay.Core.ArrowDirection;
@@ -42,6 +44,13 @@ public sealed class PlayOptions
     /// 事後に切り分けられなかったための計装。挙動は変えない。
     /// </summary>
     public bool LogPresence { get; init; }
+    /// <summary>
+    /// 検出オーバレイ保存（v0.3.59）: 逃しやすい状況（矢印バンド重なり /
+    /// 高密度 / 未予約のまま失効 / 最終ライン救済）が起きた瞬間のフレームに
+    /// 検出状態を描き込んで PNG 保存する。保存先は
+    /// %LOCALAPPDATA%\RhythmAutoplay\watch\&lt;日時&gt;\。挙動は変えない。
+    /// </summary>
+    public bool Watch { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -89,6 +98,9 @@ public sealed class PlaySession
     }
 
     public PlayStats Stats { get; } = new();
+
+    /// <summary>最新の検出状態（GUI のライブオーバレイ用）。毎フレーム差し替わる。</summary>
+    public DetectionView? LatestView { get; private set; }
 
     public void RequestStop() => _cancelled = true;
 
@@ -346,6 +358,91 @@ public sealed class PlaySession
         long scheduleTag = 0;
         var liveSchedules = new List<(int Lane, string Signature, double THit, long Tag)>();
 
+        // 検出オーバレイ（v0.3.59）: viewUpcoming はライブオーバレイの
+        // 予約マーカー用。--watch では直近フレームのリングを持ち、逃し
+        // やすい状況のトリガで検出状態を描いた PNG を保存する。保存の
+        // 失敗で演奏を止めないよう、保存側の例外は全て握りつぶす。
+        var viewUpcoming = new List<(int Lane, NoteKind Kind, double THit)>();
+        string? watchDir = null;
+        StreamWriter? watchIndex = null;
+        var watchRing = new Queue<(double T, byte[] Bgra, int W, int H, DetectionView View)>();
+        int watchSaved = 0;
+        double lastWaveSave = -10, lastDenseSave = -10, lastExpireSave = -10;
+        if (_options.Watch)
+        {
+            watchDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "RhythmAutoplay", "watch", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+            Directory.CreateDirectory(watchDir);
+            watchIndex = new StreamWriter(Path.Combine(watchDir, "index.txt")) { AutoFlush = true };
+            Log($"検出オーバレイ保存: {watchDir}");
+        }
+
+        void SaveWatchFrame(
+            (double T, byte[] Bgra, int W, int H, DetectionView View) entry,
+            string trigger, string detail)
+        {
+            if (watchDir == null || watchSaved >= 80)
+            {
+                return;
+            }
+            try
+            {
+                watchSaved++;
+                string name = $"watch_{watchSaved:D3}_{trigger}.png";
+                using var bmp = new Bitmap(entry.W, entry.H, PixelFormat.Format32bppArgb);
+                var rect = new Rectangle(0, 0, entry.W, entry.H);
+                BitmapData data = bmp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    if (data.Stride == entry.W * 4)
+                    {
+                        Marshal.Copy(entry.Bgra, 0, data.Scan0,
+                            Math.Min(entry.Bgra.Length, data.Stride * entry.H));
+                    }
+                    else
+                    {
+                        for (int y = 0; y < entry.H; y++)
+                        {
+                            Marshal.Copy(entry.Bgra, y * entry.W * 4,
+                                data.Scan0 + y * data.Stride, entry.W * 4);
+                        }
+                    }
+                }
+                finally
+                {
+                    bmp.UnlockBits(data);
+                }
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    DetectionPainter.Draw(g, entry.View, _profile, entry.W, entry.H,
+                        $"t={entry.T:F3} trigger={trigger} {detail}");
+                }
+                bmp.Save(Path.Combine(watchDir, name), ImageFormat.Png);
+                watchIndex?.WriteLine($"{name} t={entry.T:F3} trigger={trigger} {detail}");
+            }
+            catch
+            {
+                // 診断保存の失敗で演奏を止めない。
+            }
+        }
+
+        (double T, byte[] Bgra, int W, int H, DetectionView View)? RingFrameNear(double t)
+        {
+            (double T, byte[] Bgra, int W, int H, DetectionView View)? best = null;
+            double bestDiff = double.MaxValue;
+            foreach (var e in watchRing)
+            {
+                double diff = Math.Abs(e.T - t);
+                if (diff < bestDiff)
+                {
+                    bestDiff = diff;
+                    best = e;
+                }
+            }
+            return best;
+        }
+
         while (!_cancelled)
         {
             if ((GetAsyncKeyState(VkF9) & 0x8000) != 0)
@@ -407,6 +504,32 @@ public sealed class PlaySession
                     }
                 }
             }
+            viewUpcoming.RemoveAll(u => now > u.THit + 0.3);
+            var view = new DetectionView(
+                now, frame.Width, frame.Height, detections, detector.LastBands,
+                viewUpcoming.ToList());
+            LatestView = view;
+            if (_options.Watch)
+            {
+                var entry = (now, (byte[])frame.Bgra.Clone(), frame.Width, frame.Height, view);
+                watchRing.Enqueue(entry);
+                while (watchRing.Count > 10)
+                {
+                    watchRing.Dequeue();
+                }
+                int presenceCount = detections.Count(d => d.IsLinePresence);
+                if (detector.LastBands.Count > 0 && presenceCount > 0 && now - lastWaveSave >= 2.5)
+                {
+                    lastWaveSave = now;
+                    SaveWatchFrame(entry, "wave",
+                        $"bands={detector.LastBands.Count} pres={presenceCount}");
+                }
+                else if (presenceCount >= 12 && now - lastDenseSave >= 2.5)
+                {
+                    lastDenseSave = now;
+                    SaveWatchFrame(entry, "dense", $"pres={presenceCount}");
+                }
+            }
             double trkStart = capturer.Now;
 
             foreach (IGrouping<int, NoteDetection> group in detections.GroupBy(d => d.Lane))
@@ -451,6 +574,19 @@ public sealed class PlaySession
                     if (_options.DryRun)
                     {
                         Log($"[dry] lane={group.Key + 1} {sn.Kind} dir={sn.Direction?.ToString() ?? "-"} t_hit まで {sn.THit - now:F3}s");
+                    }
+                    viewUpcoming.Add((group.Key, sn.Kind, sn.THit));
+                    if (_options.Watch && sn.SampleCount == 1
+                        && Math.Abs(sn.FirstY - LineCrossingTracker.LineYs[2]) < 0.01)
+                    {
+                        // 最終ライン救済の発火: ノーツが最終ラインを横切る
+                        // 瞬間のフレームを残す（救済が拾った証拠の確認用）。
+                        var e = RingFrameNear(sn.THit - 0.109);
+                        if (e != null)
+                        {
+                            SaveWatchFrame(e.Value, "rescue",
+                                $"lane={group.Key} kind={sn.Kind} tHit={sn.THit:F3}");
+                        }
                     }
                 }
                 if (_options.LogSamples)
@@ -499,6 +635,18 @@ public sealed class PlaySession
                 {
                     LogEvent(
                         $"X lane={group.Key} kind={ex.Kind} sched={(ex.Scheduled ? 1 : 0)} n={ex.TotalSamples} fY={ex.FirstY:F3} lY={ex.LastY:F3} ft={ex.FirstTime:F3} lt={ex.LastSeenTime:F3} bres={(double.IsInfinity(ex.BestResidual) ? -1 : ex.BestResidual):F4} why={ex.FailReason} dz={ex.DeathbedReason} blr={ex.BestLineResidual:F4}");
+                    if (_options.Watch && !ex.Scheduled && now - lastExpireSave >= 0.8)
+                    {
+                        // 未予約のまま失効した鎖 = 取りこぼしの瞬間。鎖が
+                        // 最後に見えた時刻のフレームを残す。
+                        var e = RingFrameNear(ex.LastSeenTime);
+                        if (e != null)
+                        {
+                            lastExpireSave = now;
+                            SaveWatchFrame(e.Value, "expire",
+                                $"lane={group.Key} kind={ex.Kind} why={ex.FailReason} n={ex.TotalSamples}");
+                        }
+                    }
                 }
             }
 
@@ -540,6 +688,7 @@ public sealed class PlaySession
             eventLog?.WriteLine($"# timing capture={capMs / frames:F2} detect={detMs / frames:F2} track={trkMs / frames:F2}");
         }
         eventLog?.Dispose();
+        watchIndex?.Dispose();
         return 0;
     }
 
