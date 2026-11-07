@@ -321,8 +321,8 @@ public sealed class FrameDetector
         return right - left + 1;
     }
 
-    /// <summary>矢印パスの候補行。方向推定に使う統計（印ピクセルの正規化重心 X とレーン中央部の印比率）を持つ。</summary>
-    private readonly record struct ArrowRow(int Py, int X0, int X1, double MeanRx, double CenterMass);
+    /// <summary>矢印パスの候補行。方向推定に使う統計（印ピクセルの正規化重心 X とレーン中央部の印比率）と白印数を持つ。</summary>
+    private readonly record struct ArrowRow(int Py, int X0, int X1, double MeanRx, double CenterMass, int WhiteCount);
 
     private void DetectArrows(
         CapturedFrame frame, int pyTop, int pyJudge,
@@ -392,14 +392,19 @@ public sealed class FrameDetector
             }
 
             double laneWidthPx = geo.LaneWidthAt(_profile.LaneCount, y) * w;
-            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0)
+            // 白印の下限（v0.3.65）: 隣接レーンの同色ノーツ対は、隙間 30px の
+            // 橋渡しで 1.5 レーン幅を超える run になり、波でないのに帯化する
+            // （マスター実機目視）。本物の波は白シェブロンを必ず含むため、
+            // 白印がほぼ無い行は候補行にしない。
+            if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0
+                && whiteCount >= 3 && whiteCount * 10 >= markCount)
             {
                 // 方向推定の統計は白印だけで取る（白印が無い行は全印にフォールバック）。
                 double meanRx = whiteCount > 0 ? rxSumWhite / whiteCount : rxSum / markCount;
                 double centerMass = whiteCount > 0
                     ? centerWhite / (double)whiteCount
                     : centerCount / (double)markCount;
-                candidateRows.Add(new ArrowRow(py, bestStart, bestEnd, meanRx, centerMass));
+                candidateRows.Add(new ArrowRow(py, bestStart, bestEnd, meanRx, centerMass, whiteCount));
             }
         }
 
@@ -443,6 +448,19 @@ public sealed class FrameDetector
                 {
                     patternEnd = bestSplit;
                 }
+            }
+
+            // 帯全体でも白印が乏しい塊は波ではない（隣接同色対の誤帯）。
+            // 検出も帯も出さない: 誤帯は帯内緩和で通常検出まで汚すため。
+            int whiteSum = 0;
+            for (int k = i; k <= j; k++)
+            {
+                whiteSum += candidateRows[k].WhiteCount;
+            }
+            if (whiteSum < 12)
+            {
+                i = j + 1;
+                continue;
             }
 
             ArrowDirection? direction = EstimateDirection(candidateRows, i, patternEnd);
