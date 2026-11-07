@@ -11,8 +11,13 @@ namespace RhythmAutoplay.Core;
 /// ようにする。事前のオフライン試算（GOODBOUNCE の上部ライン在席
 /// ログ、コンセンサス譜面対比）では、黄のゴミ発火が従来方式の
 /// 168 件 → 3 件、残差 IQR は [−5.5, +10.5] ms と従来と僅差だった。
-/// 矢印は帯の下端がラインを横切る瞬間に、検出器が白の形状から読んだ
-/// 方向つきで同じ機械式に載せる（方向だけは色でなく形状で決める）。
+/// 矢印は v0.3.76 から従来の塊追跡 (LaneNoteTracker) へ委譲する。
+/// 自前の波追跡は 2 方式とも実走で敗れた: 横断方式 (v0.3.73) は
+/// 方向なし失効 102 件 + 方向の上偏り、方向ゾーン方式 (v0.3.75、
+/// マスター提案の「方向だけ別の場所で読む」) は失効 208 件に悪化
+/// した（帯の中での方向の読みが実際にはほぼ成立しない）。塊追跡は
+/// 降下中の方向読みの最頻値で確定する実績方式で、「方向はタイミング
+/// と別の場所・別の仕組みで読む」という分離自体はこの形で生きる。
 /// </summary>
 public sealed class SingleLineTracker : ILaneTracker
 {
@@ -28,58 +33,47 @@ public sealed class SingleLineTracker : ILaneTracker
     // 従来ラインの実測で固定した 1.70 をそのまま使う（v0.3.44）。
     private const double CrossingRate = 1.70;
     private const double RefractorySeconds = 0.05;
-    // 矢印の対応付け: 同じ波とみなす X のずれと、観測が途切れてよい時間。
-    private const double ArrowMatchXTolerance = 0.06;
-    private const double ArrowStaleSeconds = 0.25;
-    // 方向が未確定のまま横断した場合の確定待ちの締切: 到達時刻の
-    // この時間前まで、降下しながらの方向の読み直しを受け付ける。
-    // 初版は横断後 0.20 秒で打ち切ったが、その高さでは形状統計が
-    // まだ読めず（102 件が方向なしで失効）、読めても上方向へ偏った
-    // （v0.3.73 実走）。従来方式が降下の全程で方向を更新し続ける
-    // のと同じだけ待つ。締切を過ぎた予約は絶対に出さない（期限切れ
-    // 発火がリザルト画面を飛ばした v0.3.73 の事故対策）。
-    private const double ArrowDirectionMarginSeconds = 0.15;
-    // 方向を読む場所（マスター提案、v0.3.75）: 波の方向は検出ラインとは
-    // 別の場所で読む。下端がこの帯の中にある間の読みだけを採用し、
-    // 帯での最後の読みを正とする。高い位置の読みは上に偏ることが
-    // 実測されており (v0.3.73)、横断ラインの役割はタイミング専用に
-    // 徹する。発火は帯を抜けた時点（または締切）で行う。
-    private const double DirectionZoneTopY = 0.74;
-    private const double DirectionZoneBottomY = 0.88;
-
-    private sealed class ArrowObs
-    {
-        public ArrowDirection? Direction;
-        public double X;
-        public double LastY;
-        public double LastT;
-        public double FirstY;
-        public double FirstT;
-        public bool Fired;
-        public bool Pending;
-        public double PendingTHit;
-    }
 
     private readonly double _judgmentW;
     private readonly double _vanishingY;
-    private readonly List<ArrowObs> _arrows = new();
-    private readonly List<ExpiredTrack> _expired = new();
+    private readonly LaneNoteTracker _arrowTracker;
     private readonly bool[] _prevPresence = new bool[5];
     private readonly double[] _lastCrossAt = new double[5];
     private double _lastFrameTime = double.NaN;
     private double _frameDelta = 1.0 / 31;
 
-    public SingleLineTracker(double judgmentY, double vanishingY)
+    public SingleLineTracker(
+        double judgmentY,
+        double vanishingY,
+        double spawnGateY,
+        double commitWindowSeconds)
     {
         _judgmentW = 1.0 / (judgmentY - vanishingY);
         _vanishingY = vanishingY;
+        // 矢印の委譲先は従来ライン方式と同一の構成にする。
+        _arrowTracker = new LaneNoteTracker(
+            judgmentY,
+            vanishingY: vanishingY,
+            spawnGateY: spawnGateY,
+            scheduleHorizonSeconds: 1.2,
+            commitWindowSeconds: commitWindowSeconds);
         for (int k = 0; k < 5; k++)
         {
             _lastCrossAt[k] = double.NegativeInfinity;
         }
     }
 
-    public bool CollectSamples { get; set; }
+    private bool _collectSamples;
+
+    public bool CollectSamples
+    {
+        get => _collectSamples;
+        set
+        {
+            _collectSamples = value;
+            _arrowTracker.CollectSamples = value;
+        }
+    }
 
     private double W(double y) => 1.0 / (y - _vanishingY);
 
@@ -95,7 +89,18 @@ public sealed class SingleLineTracker : ILaneTracker
         }
         _lastFrameTime = timeSeconds;
 
-        ObserveArrows(timeSeconds, laneDetections, scheduled);
+        // 矢印は従来方式へ（従来ライン方式と同じ委譲）。
+        var arrows = new List<NoteDetection>();
+        foreach (NoteDetection d in laneDetections)
+        {
+            if (d.Kind == NoteKind.Arrow)
+            {
+                arrows.Add(d);
+            }
+        }
+        scheduled.AddRange(_arrowTracker.Observe(
+            timeSeconds,
+            arrows.Count > 0 ? arrows : Array.Empty<NoteDetection>()));
 
         // このラインの在席。紫は「未解決の重なり」として発火させない
         // （種別としては存在しない: マスター確認 + 全セッションログ
@@ -133,132 +138,11 @@ public sealed class SingleLineTracker : ILaneTracker
         return scheduled;
     }
 
-    private void ObserveArrows(double t, IReadOnlyList<NoteDetection> dets, List<ScheduledNote> scheduled)
-    {
-        foreach (NoteDetection d in dets)
-        {
-            if (d.Kind != NoteKind.Arrow || d.IsLinePresence)
-            {
-                continue;
-            }
-            // 同じ波とみなす観測: X が近く、途切れが短く、下端 Y が最も近いもの。
-            ArrowObs? match = null;
-            double bestDy = double.PositiveInfinity;
-            foreach (ArrowObs o in _arrows)
-            {
-                if (Math.Abs(d.X - o.X) > ArrowMatchXTolerance || t - o.LastT > ArrowStaleSeconds)
-                {
-                    continue;
-                }
-                double dy = Math.Abs(d.Y - o.LastY);
-                if (dy < bestDy)
-                {
-                    bestDy = dy;
-                    match = o;
-                }
-            }
-            if (match == null)
-            {
-                var o = new ArrowObs
-                {
-                    X = d.X,
-                    LastY = d.Y,
-                    LastT = t,
-                    FirstY = d.Y,
-                    FirstT = t,
-                };
-                if (InDirectionZone(d.Y) && d.Direction != null)
-                {
-                    o.Direction = d.Direction;
-                }
-                _arrows.Add(o);
-                if (d.Y >= LineY)
-                {
-                    // 初見ですでにラインより下: 横断は観測できないため、
-                    // 初見位置からの到着予測で保留に入る（機械式の縮退形）。
-                    PendArrow(o, t + LeadFrom(d.Y));
-                }
-                continue;
-            }
-            double prevY = match.LastY;
-            double prevT = match.LastT;
-            // 方向の読みは帯の中だけ採用し、新しい読みで置き換える。
-            if (InDirectionZone(d.Y) && d.Direction != null)
-            {
-                match.Direction = d.Direction;
-            }
-            match.X = d.X;
-            match.LastY = d.Y;
-            match.LastT = t;
-            if (!match.Fired && !match.Pending
-                && prevY < LineY && d.Y >= LineY && d.Y > prevY)
-            {
-                // 下端がラインを横切る時刻を前後フレームで補間する。
-                // 発火はここでは行わず、方向の帯を抜けてからにする。
-                double frac = (LineY - prevY) / (d.Y - prevY);
-                double tCross = prevT + frac * (t - prevT);
-                PendArrow(match, tCross + LeadFrom(LineY));
-            }
-        }
+    public List<ExpiredTrack> DrainExpired() => _arrowTracker.DrainExpired();
 
-        // 方向待ちの確定・失効と、古い観測の掃除。
-        for (int i = _arrows.Count - 1; i >= 0; i--)
-        {
-            ArrowObs o = _arrows[i];
-            if (o.Pending && o.Direction != null
-                && (o.LastY > DirectionZoneBottomY
-                    || t > o.PendingTHit - ArrowDirectionMarginSeconds))
-            {
-                // 帯を抜けた（または締切が来た）ので、帯での最後の読みで発火。
-                o.Pending = false;
-                o.Fired = true;
-                scheduled.Add(new ScheduledNote(
-                    NoteKind.Arrow, o.Direction, o.PendingTHit, 0.0, 1,
-                    LineY, o.FirstT));
-            }
-            else if (o.Pending && t > o.PendingTHit - ArrowDirectionMarginSeconds)
-            {
-                // 締切までに方向が読めなかった波は発火しない（方向なしの
-                // 矢印はキーに変換できない）。失効として記録する。
-                o.Pending = false;
-                o.Fired = true;
-                _expired.Add(new ExpiredTrack(
-                    NoteKind.Arrow, false, 1, o.FirstY, o.LastY,
-                    o.FirstT, o.LastT, 0, "nodir"));
-            }
-            if (t - o.LastT > ArrowStaleSeconds)
-            {
-                if (!o.Fired)
-                {
-                    _expired.Add(new ExpiredTrack(
-                        NoteKind.Arrow, false, 1, o.FirstY, o.LastY,
-                        o.FirstT, o.LastT, 0, "stale"));
-                }
-                _arrows.RemoveAt(i);
-            }
-        }
-    }
+    public List<SuppressedDuplicate> DrainSuppressed() => _arrowTracker.DrainSuppressed();
 
-    private static bool InDirectionZone(double y)
-        => y >= DirectionZoneTopY && y <= DirectionZoneBottomY;
+    public List<RevisedNote> DrainRevisions() => _arrowTracker.DrainRevisions();
 
-    private void PendArrow(ArrowObs o, double tHit)
-    {
-        // 横断で到達時刻だけを確定し、発火は方向の帯を抜けてから行う。
-        o.Pending = true;
-        o.PendingTHit = tHit;
-    }
-
-    public List<ExpiredTrack> DrainExpired()
-    {
-        var result = new List<ExpiredTrack>(_expired);
-        _expired.Clear();
-        return result;
-    }
-
-    public List<SuppressedDuplicate> DrainSuppressed() => new();
-
-    public List<RevisedNote> DrainRevisions() => new();
-
-    public List<(int Id, double Time, double Y)> DrainSampleLog() => new();
+    public List<(int Id, double Time, double Y)> DrainSampleLog() => _arrowTracker.DrainSampleLog();
 }

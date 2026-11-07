@@ -193,7 +193,9 @@ public sealed class PlaySession
                 : useLine1
                 ? new SingleLineTracker(
                     _profile.JudgmentLineY,
-                    vanishingY: _profile.Geometry.VanishingY)
+                    vanishingY: _profile.Geometry.VanishingY,
+                    spawnGateY: spawnGateY,
+                    commitWindowSeconds: _options.CommitWindowMilliseconds / 1000.0)
                 : useLine
                 ? new LineCrossingTracker(
                     _profile.JudgmentLineY,

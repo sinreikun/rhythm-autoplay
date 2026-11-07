@@ -1073,10 +1073,13 @@ public class SingleLineTrackerTests
     private static NoteDetection Presence(double t, NoteKind kind)
         => new(0, kind, null, 0.4, SingleLineTracker.LineY, t, IsLinePresence: true);
 
+    private static SingleLineTracker NewTracker()
+        => new(judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.1);
+
     [Fact]
     public void SingleCrossing_SchedulesImmediatelyWithPredictedHit()
     {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
+        var tracker = NewTracker();
         // フレーム間隔 1/60: t=0.9833 は不在、t=1.0000 で在席が立つ。
         // 横断時刻 = 1.0 - (1/60)/2 = 0.99167。
         // 到達 = 横断 + (W(0.665)-W(0.941))/1.70 + 0.006
@@ -1091,7 +1094,7 @@ public class SingleLineTrackerTests
     [Fact]
     public void SustainedPresence_SchedulesOnce()
     {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
+        var tracker = NewTracker();
         int count = 0;
         for (int i = 0; i < 10; i++)
         {
@@ -1104,7 +1107,7 @@ public class SingleLineTrackerTests
     [Fact]
     public void ReEdgeWithinRefractory_IsBlocked_NextNoteAfterRefractory_Fires()
     {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
+        var tracker = NewTracker();
         int count = 0;
         count += tracker.Observe(1.0000, new List<NoteDetection> { Presence(1.0, NoteKind.Yellow) }).Count;
         count += tracker.Observe(1.0167, new List<NoteDetection>()).Count;
@@ -1121,81 +1124,29 @@ public class SingleLineTrackerTests
     public void PurplePresence_NeverSchedules()
     {
         // 紫は種別として存在しない（未解決の重なり）。発火させない。
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
+        var tracker = NewTracker();
         var got = tracker.Observe(1.0, new List<NoteDetection> { Presence(1.0, NoteKind.Purple) });
         Assert.Empty(got);
     }
 
     [Fact]
-    public void ArrowCrossing_FiresAfterZoneExitWithCrossingTime()
+    public void ArrowDetections_AreDelegatedToBlobTracker()
     {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
-        var a1 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.60, 1.0);
-        var a2 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.70, 1.1);
-        var a3 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Right, 0.5, 0.78, 1.2);
-        var a4 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Right, 0.5, 0.90, 1.3);
-        Assert.Empty(tracker.Observe(1.0, new List<NoteDetection> { a1 }));
-        // 横断はしたが方向の帯に入るまでは発火しない。
-        Assert.Empty(tracker.Observe(1.1, new List<NoteDetection> { a2 }));
-        // 帯の中で方向を読んでも、抜けるまでは保留。
-        Assert.Empty(tracker.Observe(1.2, new List<NoteDetection> { a3 }));
-        var got = tracker.Observe(1.3, new List<NoteDetection> { a4 });
-        Assert.Single(got);
-        // 横断補間: (0.665-0.60)/(0.70-0.60) = 0.65 → tCross = 1.065。
-        // 到達 = 1.065 + 1.07146 + 0.006 = 2.14246（帯の読みで発火しても
-        // 到達時刻は横断で確定したもののまま）。
-        Assert.Equal(ArrowDirection.Right, got[0].Direction);
-        Assert.True(Math.Abs(got[0].THit - 2.1425) < 0.002, $"tHit={got[0].THit:F4}");
-    }
-
-    [Fact]
-    public void ArrowDirectionAboveZone_IsIgnored()
-    {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
-        var a1 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Up, 0.5, 0.60, 1.0);
-        var a2 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Up, 0.5, 0.70, 1.1);
-        var a3 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.5, 0.80, 1.2);
-        var a4 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Left, 0.5, 0.90, 1.3);
-        Assert.Empty(tracker.Observe(1.0, new List<NoteDetection> { a1 }));
-        Assert.Empty(tracker.Observe(1.1, new List<NoteDetection> { a2 }));
-        Assert.Empty(tracker.Observe(1.2, new List<NoteDetection> { a3 }));
-        var got = tracker.Observe(1.3, new List<NoteDetection> { a4 });
-        Assert.Single(got);
-        // 帯より上での Up の読みは採用されず、帯での Left が正になる。
-        Assert.Equal(ArrowDirection.Left, got[0].Direction);
-    }
-
-    [Fact]
-    public void ArrowFirstSeenBelowLine_FiresAfterZoneExitFromDetectionY()
-    {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
-        var a1 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.75, 2.0);
-        var a2 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Up, 0.5, 0.80, 2.1);
-        var a3 = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Up, 0.5, 0.90, 2.2);
-        Assert.Empty(tracker.Observe(2.0, new List<NoteDetection> { a1 }));
-        Assert.Empty(tracker.Observe(2.1, new List<NoteDetection> { a2 }));
-        var got = tracker.Observe(2.2, new List<NoteDetection> { a3 });
-        Assert.Single(got);
-        // 到達 = 2.0 + (W(0.75)-W(0.941))/1.70 + 0.006
-        //      = 2.0 + (2.77778-1.81488)/1.70 + 0.006 = 2.57241。
-        Assert.Equal(ArrowDirection.Up, got[0].Direction);
-        Assert.True(Math.Abs(got[0].THit - 2.5724) < 0.002, $"tHit={got[0].THit:F4}");
-    }
-
-    [Fact]
-    public void ArrowWithoutDirection_ExpiresAtDeadline()
-    {
-        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
-        var a1 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.60, 1.0);
-        var a2 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.70, 1.1);
-        tracker.Observe(1.0, new List<NoteDetection> { a1 });
-        tracker.Observe(1.1, new List<NoteDetection> { a2 });
-        // 到達 2.1425 の 0.15 秒前 = 1.9925 を過ぎても方向なし → 失効し、
-        // 期限切れの発火は出ない。
-        var got = tracker.Observe(2.0, new List<NoteDetection>());
-        Assert.Empty(got);
-        var expired = tracker.DrainExpired();
-        Assert.Single(expired);
-        Assert.Equal("nodir", expired[0].FailReason);
+        // 矢印は塊追跡へ委譲される (v0.3.76)。到達 3.0 に合わせた
+        // 射影運動で波を降下させると、方向つきの予約が返る。
+        var tracker = NewTracker();
+        double judgmentW = 1.0 / (0.941 - Van);
+        var got = new List<ScheduledNote>();
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 1.8 + i / 30.0;
+            double w = judgmentW + 1.70 * (3.0 - t);
+            double y = Van + 1.0 / w;
+            var d = new NoteDetection(0, NoteKind.Arrow, ArrowDirection.Right, 0.5, y, t);
+            got.AddRange(tracker.Observe(t, new List<NoteDetection> { d }));
+        }
+        Assert.Contains(got, n => n.Kind == NoteKind.Arrow
+            && n.Direction == ArrowDirection.Right
+            && Math.Abs(n.THit - 3.0) < 0.05);
     }
 }
