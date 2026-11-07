@@ -1168,3 +1168,25 @@ public class SingleLineTrackerTests
         Assert.Equal(ArrowDirection.Left, got[0].Direction);
     }
 }
+
+public class SingleLineTrackerDirectionDeadlineTests
+{
+    private const double Van = 0.39;
+
+    [Fact]
+    public void ArrowWithoutDirection_ExpiresAtDeadline()
+    {
+        var tracker = new SingleLineTracker(judgmentY: 0.941, vanishingY: Van);
+        var a1 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.60, 1.0);
+        var a2 = new NoteDetection(0, NoteKind.Arrow, null, 0.5, 0.70, 1.1);
+        tracker.Observe(1.0, new List<NoteDetection> { a1 });
+        tracker.Observe(1.1, new List<NoteDetection> { a2 });
+        // 到達 2.1335 の 0.15 秒前 = 1.9835 を過ぎても方向なし → 失効し、
+        // 期限切れの発火は出ない。
+        var got = tracker.Observe(2.0, new List<NoteDetection>());
+        Assert.Empty(got);
+        var expired = tracker.DrainExpired();
+        Assert.Single(expired);
+        Assert.Equal("nodir", expired[0].FailReason);
+    }
+}

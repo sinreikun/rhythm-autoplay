@@ -392,9 +392,8 @@ public sealed class PlaySession
         // ライン在席ログ（v0.3.56、診断用）: レーンごとの前フレームの
         // 在席マスク。ビット位置は ライン番号×5 + 色種番号。
         var prevPresenceMask = new int[_profile.LaneCount];
-        // 単ライン状態ログ（v0.3.73、診断用）: ビット 0-2 = 通常読みの
-        // 色マスク、3-5 = 薄い読みの色マスク、6 = 白の重なり、7 = 波の
-        // 重なり、8 = 紫相の証拠あり。
+        // 単ライン状態ログ（v0.3.73、診断用）: ビット配置は PL1 の
+        // 書き出し箇所に記載（v0.3.74 で重なりを修正済み）。
         var prevLine1Mask = new int[_profile.LaneCount];
         // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
         // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
@@ -554,10 +553,14 @@ public sealed class PlaySession
                 for (int lane = 0; lane < states.Count && lane < prevLine1Mask.Length; lane++)
                 {
                     Line1LaneState st = states[lane];
-                    int m = st.StrictMask | (st.DimMask << 3)
-                        | (st.WhiteCount >= 2 ? 1 << 6 : 0)
-                        | (st.InWave ? 1 << 7 : 0)
-                        | (st.PurpleCount >= 2 ? 1 << 8 : 0);
+                    // ビット配置（v0.3.74 で重なりを修正）: 0-3 = 通常読み、
+                    // 4-7 = 薄い読み、8 = 白の重なり、9 = 波の重なり、
+                    // 10 = 紫相の証拠。初版は薄い読みを <<3 に置き、通常
+                    // 読みの黄（ビット 3）と白（ビット 6）が衝突していた。
+                    int m = st.StrictMask | (st.DimMask << 4)
+                        | (st.WhiteCount >= 2 ? 1 << 8 : 0)
+                        | (st.InWave ? 1 << 9 : 0)
+                        | (st.PurpleCount >= 2 ? 1 << 10 : 0);
                     if (m != prevLine1Mask[lane])
                     {
                         LogEvent($"PL1 t={now:F3} lane={lane} m={m:X4}");

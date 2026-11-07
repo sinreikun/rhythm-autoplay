@@ -175,24 +175,21 @@ public sealed class FrameDetector
                     dimMask |= 1 << (int)ToKind(pc);
                 }
             }
-            // パターンの確定: 証拠の最も多い色ファミリーを、そのレーンの
-            // 原子色として 1 件だけ在席にする。白・波の重なりは確定を
-            // 変えない（キーは原子色に共通化されるため）。
-            PixelColor best = PixelColor.None;
-            int bestCount = 1; // 在席には同色 2 標本以上の証拠を要求する
+            // パターンの確定: 証拠（同色 2 標本以上）のある色ファミリーは
+            // 全部、そのレーンの在席として出す（v0.3.74）。初版は最有力の
+            // 1 色だけを出していたが、標本の中にある色が候補から落ち、
+            // 特に黄が大量に消えた（初回実走のマスター目視 + PL1 実測）。
+            // 1 レーンに同時に立つ色は標本の行・列の違いで複数あり得る
+            // ため、勝者総取りにせず色ごとに独立に数える。白・波の
+            // 重なりは確定を変えない（キーは原子色に共通化される）。
             foreach (PixelColor pc in new[] { PixelColor.Red, PixelColor.Blue, PixelColor.Yellow })
             {
-                if (strictCounts[(int)pc] > bestCount)
+                if (strictCounts[(int)pc] >= 2)
                 {
-                    bestCount = strictCounts[(int)pc];
-                    best = pc;
+                    results.Add(new NoteDetection(
+                        lane, ToKind(pc), null, cx, lineY, frame.TimeSeconds,
+                        IsLinePresence: true));
                 }
-            }
-            if (best != PixelColor.None)
-            {
-                results.Add(new NoteDetection(
-                    lane, ToKind(best), null, cx, lineY, frame.TimeSeconds,
-                    IsLinePresence: true));
             }
             states[lane] = new Line1LaneState(
                 strictMask, dimMask, whiteCount, inWave,

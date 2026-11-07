@@ -29,9 +29,14 @@ public sealed class SingleLineTracker : ILaneTracker
     // 矢印の対応付け: 同じ波とみなす X のずれと、観測が途切れてよい時間。
     private const double ArrowMatchXTolerance = 0.06;
     private const double ArrowStaleSeconds = 0.25;
-    // 方向が未確定のまま横断した場合に、方向の確定を待つ猶予。
-    // 発火は約 0.8 秒先なので、この待ちは発火時刻に影響しない。
-    private const double ArrowDirectionWaitSeconds = 0.20;
+    // 方向が未確定のまま横断した場合の確定待ちの締切: 到達時刻の
+    // この時間前まで、降下しながらの方向の読み直しを受け付ける。
+    // 初版は横断後 0.20 秒で打ち切ったが、その高さでは形状統計が
+    // まだ読めず（102 件が方向なしで失効）、読めても上方向へ偏った
+    // （v0.3.73 実走）。従来方式が降下の全程で方向を更新し続ける
+    // のと同じだけ待つ。締切を過ぎた予約は絶対に出さない（期限切れ
+    // 発火がリザルト画面を飛ばした v0.3.73 の事故対策）。
+    private const double ArrowDirectionMarginSeconds = 0.15;
 
     private sealed class ArrowObs
     {
@@ -44,7 +49,6 @@ public sealed class SingleLineTracker : ILaneTracker
         public bool Fired;
         public bool Pending;
         public double PendingTHit;
-        public double PendingDeadline;
     }
 
     private readonly double _judgmentW;
@@ -160,7 +164,7 @@ public sealed class SingleLineTracker : ILaneTracker
                 {
                     // 初見ですでにラインより下: 横断は観測できないため、
                     // 初見位置からの到着予測で即発火する（機械式の縮退形）。
-                    FireArrow(o, t + LeadFrom(d.Y), t, scheduled);
+                    FireArrow(o, t + LeadFrom(d.Y), scheduled);
                 }
                 continue;
             }
@@ -179,7 +183,7 @@ public sealed class SingleLineTracker : ILaneTracker
                 // 下端がラインを横切る時刻を前後フレームで補間する。
                 double frac = (LineY - prevY) / (d.Y - prevY);
                 double tCross = prevT + frac * (t - prevT);
-                FireArrow(match, tCross + LeadFrom(LineY), t, scheduled);
+                FireArrow(match, tCross + LeadFrom(LineY), scheduled);
             }
         }
 
@@ -195,9 +199,9 @@ public sealed class SingleLineTracker : ILaneTracker
                     NoteKind.Arrow, o.Direction, o.PendingTHit, 0.0, 1,
                     LineY, o.FirstT));
             }
-            else if (o.Pending && t > o.PendingDeadline)
+            else if (o.Pending && t > o.PendingTHit - ArrowDirectionMarginSeconds)
             {
-                // 方向が最後まで読めなかった波は発火しない（方向なしの
+                // 締切までに方向が読めなかった波は発火しない（方向なしの
                 // 矢印はキーに変換できない）。失効として記録する。
                 o.Pending = false;
                 o.Fired = true;
@@ -207,7 +211,7 @@ public sealed class SingleLineTracker : ILaneTracker
             }
             if (t - o.LastT > ArrowStaleSeconds)
             {
-                if (!o.Fired && !o.Pending)
+                if (!o.Fired)
                 {
                     _expired.Add(new ExpiredTrack(
                         NoteKind.Arrow, false, 1, o.FirstY, o.LastY,
@@ -218,7 +222,7 @@ public sealed class SingleLineTracker : ILaneTracker
         }
     }
 
-    private void FireArrow(ArrowObs o, double tHit, double now, List<ScheduledNote> scheduled)
+    private void FireArrow(ArrowObs o, double tHit, List<ScheduledNote> scheduled)
     {
         if (o.Direction != null)
         {
@@ -228,9 +232,9 @@ public sealed class SingleLineTracker : ILaneTracker
         }
         else
         {
+            // 方向が読めるまで保留にし、降下中の読み直しを受け付ける。
             o.Pending = true;
             o.PendingTHit = tHit;
-            o.PendingDeadline = now + ArrowDirectionWaitSeconds;
         }
     }
 
