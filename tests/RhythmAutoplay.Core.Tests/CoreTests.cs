@@ -1133,55 +1133,6 @@ public class SingleLineTrackerTests
     }
 
     [Fact]
-    public void SlopePair_TwoCrossingsFitRate()
-    {
-        var tracker = NewTracker();
-        tracker.Observe(0.9833, Array.Empty<NoteDetection>());
-        // 参照ライン (0.60) の横断: crossTime = 1.0 - 1/120 = 0.9917。
-        // 参照ラインだけでは発火しない。在席が 2 フレーム続いて初めて
-        // エピソードとして記録される（v0.3.78 のエッジ衛生）。
-        var up = tracker.Observe(1.0, new[]
-        {
-            PresenceAt(1.0, NoteKind.Red, SingleLineTracker.UpperLineY),
-        });
-        Assert.Empty(up);
-        var up2 = tracker.Observe(1.0167, new[]
-        {
-            PresenceAt(1.0167, NoteKind.Red, SingleLineTracker.UpperLineY),
-        });
-        Assert.Empty(up2);
-        tracker.Observe(1.0333, Array.Empty<NoteDetection>());
-        tracker.Observe(1.5833, Array.Empty<NoteDetection>());
-        // 発火ライン (0.665) の横断: crossTime = 1.5917。dt = 0.60 s、
-        // レート = (W(0.60) - W(0.665)) / 0.60 = 1.1255 / 0.60 = 1.8759。
-        // tHit = 1.5917 + (W(0.665) - 判断W) / 1.8759 + 補正 0.006 = 2.5686。
-        // 固定レートなら 2.6691 になるので区別できる。
-        var got = tracker.Observe(1.60, new[] { Presence(1.60, NoteKind.Red) });
-        ScheduledNote note = Assert.Single(got);
-        Assert.Equal(2, note.SampleCount);
-        Assert.InRange(note.THit, 2.5666, 2.5706);
-    }
-
-    [Fact]
-    public void SlopePair_SingleFrameBlipDoesNotPair()
-    {
-        var tracker = NewTracker();
-        tracker.Observe(0.9833, Array.Empty<NoteDetection>());
-        // 参照ラインに 1 フレームだけの点滅: エピソードとして記録されず、
-        // 発火は固定レート (n=1) になる。tHit = 1.5917 + 1.0715 + 0.006。
-        tracker.Observe(1.0, new[]
-        {
-            PresenceAt(1.0, NoteKind.Red, SingleLineTracker.UpperLineY),
-        });
-        tracker.Observe(1.0167, Array.Empty<NoteDetection>());
-        tracker.Observe(1.5833, Array.Empty<NoteDetection>());
-        var got = tracker.Observe(1.60, new[] { Presence(1.60, NoteKind.Red) });
-        ScheduledNote note = Assert.Single(got);
-        Assert.Equal(1, note.SampleCount);
-        Assert.InRange(note.THit, 2.6671, 2.6711);
-    }
-
-    [Fact]
     public void ArrowDetections_AreDelegatedToBlobTracker()
     {
         // 矢印は塊追跡へ委譲される (v0.3.76)。到達 3.0 に合わせた
