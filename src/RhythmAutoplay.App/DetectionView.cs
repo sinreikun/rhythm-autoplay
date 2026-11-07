@@ -36,7 +36,7 @@ public static class DetectionPainter
     /// </summary>
     public static void Draw(
         Graphics g, DetectionView view, GameProfile profile,
-        int widthPx, int heightPx, string? caption)
+        int widthPx, int heightPx, string? caption, bool overlayMode = false)
     {
         if (view.FrameWidth <= 0 || view.FrameHeight <= 0)
         {
@@ -46,8 +46,12 @@ public static class DetectionPainter
         double sy = heightPx / (double)view.FrameHeight;
         LaneGeometry geo = profile.Geometry;
 
-        // 矢印バンド: ハイウェイ全幅を薄い白で覆う。
+        // 矢印バンド: ハイウェイ全幅を薄い白で覆う。ただしオーバレイ
+        // （TransparencyKey のマゼンタ地）に半透明色を塗るとキー色と
+        // 混ざって不透明なマゼンタ面になり、ゲームを覆ってしまう
+        // （v0.3.60 実機報告）。オーバレイでは輪郭だけを不透明で描く。
         using (var bandBrush = new SolidBrush(Color.FromArgb(46, 255, 255, 255)))
+        using (var bandPen = new Pen(Color.White, 1.5f))
         {
             foreach ((int top, int bottom) in view.Bands)
             {
@@ -57,12 +61,19 @@ public static class DetectionPainter
                 double halfB = geo.HalfWidthAt(yBot);
                 float x0 = (float)((geo.CenterX - Math.Max(halfT, halfB)) * widthPx);
                 float x1 = (float)((geo.CenterX + Math.Max(halfT, halfB)) * widthPx);
-                g.FillRectangle(bandBrush, x0, (float)(top * sy), x1 - x0, (float)((bottom - top) * sy));
+                if (overlayMode)
+                {
+                    g.DrawRectangle(bandPen, x0, (float)(top * sy), x1 - x0, (float)((bottom - top) * sy));
+                }
+                else
+                {
+                    g.FillRectangle(bandBrush, x0, (float)(top * sy), x1 - x0, (float)((bottom - top) * sy));
+                }
             }
         }
 
         // 固定ライン3本（在席走査のライン）。
-        using (var linePen = new Pen(Color.FromArgb(200, 255, 255, 255), 1.5f))
+        using (var linePen = new Pen(Color.FromArgb(overlayMode ? 255 : 200, 255, 255, 255), 1.5f))
         {
             foreach (double lineY in LineCrossingTracker.LineYs)
             {
@@ -75,7 +86,8 @@ public static class DetectionPainter
 
         using var font = new Font("Consolas", Math.Max(10f, heightPx * 0.016f), FontStyle.Bold);
         using var textBrush = new SolidBrush(Color.White);
-        using var shadowBrush = new SolidBrush(Color.FromArgb(160, 0, 0, 0));
+        // オーバレイでは影も半透明色になるため塗らない（同上）。
+        using var shadowBrush = new SolidBrush(overlayMode ? Color.Transparent : Color.FromArgb(160, 0, 0, 0));
 
         foreach (NoteDetection d in view.Detections)
         {

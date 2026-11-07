@@ -54,6 +54,23 @@ public sealed class OverlayForm : Form
 
     protected override bool ShowWithoutActivation => true;
 
+    private const uint WdaExcludeFromCapture = 0x00000011;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // 本体のキャプチャは画面 DC からの BitBlt で、ゲームの真上に
+        // 重なるこのオーバレイがそのまま映り込む。検出器がオーバレイ
+        // 自身（マゼンタ地や描画）を見て検出が死ぬため（v0.3.60 実機
+        // 報告）、表示アフィニティでキャプチャから除外する。ユーザー
+        // の目には今まで通り見える。編集モードの RecreateHandle でも
+        // ここを通るので追従できる。
+        SetWindowDisplayAffinity(Handle, WdaExcludeFromCapture);
+    }
+
     protected override CreateParams CreateParams
     {
         get
@@ -105,9 +122,10 @@ public sealed class OverlayForm : Form
 
         // ライブ検出表示（v0.3.59）: セッション中の検出状態を重ねる。
         // 在席セル・矢印バンド・予約マーカーを DetectionPainter で描く。
+        // overlayMode: 半透明塗りはキー色と混ざって面になるため輪郭のみ。
         if (!_editMode && ViewProvider?.Invoke() is { } view)
         {
-            DetectionPainter.Draw(g, view, profile, ClientSize.Width, ClientSize.Height, null);
+            DetectionPainter.Draw(g, view, profile, ClientSize.Width, ClientSize.Height, null, overlayMode: true);
         }
 
         if (_editMode)
