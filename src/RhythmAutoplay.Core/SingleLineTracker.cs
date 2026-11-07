@@ -37,13 +37,22 @@ public sealed class SingleLineTracker : ILaneTracker
     // 従来ラインの実測で固定した 1.70 をそのまま使う（v0.3.44）。
     private const double CrossingRate = 1.70;
     private const double RefractorySeconds = 0.05;
-    // 傾きペアの受理条件（v0.3.77）: 2 ラインの横断間隔が想定範囲にあり、
+    // 傾きペアの受理条件: 2 ラインの横断間隔が想定範囲にあり、
     // 割り出したレートが実測の分布内にあるときだけ傾き発火にする。
     // 範囲外は固定レートの単独発火へ落とす（機械式の縮退形）。
-    private const double MinPairDtSeconds = 0.30;
-    private const double MaxPairDtSeconds = 1.05;
-    private const double MinSlopeRate = 1.45;
-    private const double MaxSlopeRate = 1.95;
+    // v0.3.78 で窓を実測の移動時間クラスタ（0.60〜0.85 秒）に合わせて
+    // 狭めた（v0.3.77 の [0.30, 1.05] は広すぎた）。
+    private const double MinPairDtSeconds = 0.55;
+    private const double MaxPairDtSeconds = 0.80;
+    private const double MinSlopeRate = 1.50;
+    private const double MaxSlopeRate = 1.90;
+    // 参照ラインのエッジ衛生（v0.3.78）: 上方の薄いノーツは厳格な彩度
+    // 下限の前後で点滅し、1 ノーツに複数の立ち上がりが出る（v0.3.77
+    // 実測: PL2 エッジの多くが本物の移動時間より手前に湧いた）。対策は
+    // (a) 在席が 2 フレーム続いたエピソードだけを数える、(b) エピソード
+    // の最初の横断だけを記録し、エピソード内の後の点滅では上書きしない
+    // （エピソード間隔 0.35 秒で区切る）。
+    private const double UpperEpisodeGapSeconds = 0.35;
 
     private readonly double _judgmentW;
     private readonly double _vanishingY;
@@ -53,6 +62,11 @@ public sealed class SingleLineTracker : ILaneTracker
     private readonly double[,] _lastCrossAt = new double[2, 5];
     // 色ごとの直近の参照ライン横断時刻（傾きペア用、未観測は NaN）。
     private readonly double[] _upperCrossAt = new double[5];
+    // 参照ラインのエピソード管理（v0.3.78）: 連続在席フレーム数、
+    // エピソード開始フレームの横断時刻、最後にエッジを記録した時刻。
+    private readonly int[] _upperRun = new int[5];
+    private readonly double[] _upperRunStart = new double[5];
+    private readonly double[] _upperEdgeAt = new double[5];
     private double _lastFrameTime = double.NaN;
     private double _frameDelta = 1.0 / 31;
 
@@ -81,6 +95,8 @@ public sealed class SingleLineTracker : ILaneTracker
         for (int k = 0; k < 5; k++)
         {
             _upperCrossAt[k] = double.NaN;
+            _upperRunStart[k] = double.NaN;
+            _upperEdgeAt[k] = double.NegativeInfinity;
         }
     }
 
@@ -145,17 +161,32 @@ public sealed class SingleLineTracker : ILaneTracker
         // 横断時刻は「不在→在席」の中点に置く（従来ラインと同じ約束）。
         double crossTime = timeSeconds - _frameDelta / 2;
         // 参照ラインの横断は発火せず、傾きペアの片端として記録する。
+        // エッジ衛生（v0.3.78）: 在席が 2 フレーム続いた時点で、その
+        // エピソードの開始横断を 1 回だけ記録する。エピソード内の
+        // 点滅による後の立ち上がりでは上書きしない。
         for (int k = 0; k < 5; k++)
         {
             if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
             {
                 continue;
             }
-            if (presence[0, k] && !_prevPresence[0, k]
-                && timeSeconds - _lastCrossAt[0, k] > RefractorySeconds)
+            if (presence[0, k])
             {
-                _lastCrossAt[0, k] = timeSeconds;
-                _upperCrossAt[k] = crossTime;
+                if (_upperRun[k] == 0)
+                {
+                    _upperRunStart[k] = crossTime;
+                }
+                _upperRun[k]++;
+                if (_upperRun[k] == 2
+                    && timeSeconds - _upperEdgeAt[k] > UpperEpisodeGapSeconds)
+                {
+                    _upperEdgeAt[k] = timeSeconds;
+                    _upperCrossAt[k] = _upperRunStart[k];
+                }
+            }
+            else
+            {
+                _upperRun[k] = 0;
             }
         }
         // 発火ラインの横断で発火する。参照ラインとペアが組めれば、その
