@@ -27,9 +27,6 @@ public sealed class FrameDetector
     /// <summary>縦の画素量を現在のフレーム高へ読み替える。</summary>
     private int V(double pxAtBase) => Math.Max(1, (int)Math.Round(pxAtBase * _sy));
 
-    /// <summary>横の画素カウントを現在のフレーム幅へ読み替える。</summary>
-    private int H(double countAtBase) => Math.Max(1, (int)Math.Round(countAtBase * _sx));
-
     private readonly GameProfile _profile;
 
     public FrameDetector(GameProfile profile) => _profile = profile;
@@ -415,8 +412,12 @@ public sealed class FrameDetector
             // 橋渡しで 1.5 レーン幅を超える run になり、波でないのに帯化する
             // （マスター実機目視）。本物の波は白シェブロンを必ず含むため、
             // 白印がほぼ無い行は候補行にしない。
+            // 白印数の下限は解像度で読み替えない（v0.3.70）: 明部の芯の
+            // 標本数は解像度に比例して増えず、線形スケールでは実効的に
+            // 厳しくなって本物の波を落とした（v0.3.69 FS 実測）。
+            // 距離量のスケールとは別扱いにする。
             if (bestStart >= 0 && bestEnd - bestStart > laneWidthPx * 1.5 && markCount > 0
-                && whiteCount >= Math.Max(3, H(3)) && whiteCount * 10 >= markCount)
+                && whiteCount >= 3 && whiteCount * 10 >= markCount)
             {
                 // 方向推定の統計は白印だけで取る（白印が無い行は全印にフォールバック）。
                 double meanRx = whiteCount > 0 ? rxSumWhite / whiteCount : rxSum / markCount;
@@ -476,7 +477,7 @@ public sealed class FrameDetector
             {
                 whiteSum += candidateRows[k].WhiteCount;
             }
-            if (whiteSum < Math.Max(12, H(12)))
+            if (whiteSum < 12)
             {
                 i = j + 1;
                 continue;
