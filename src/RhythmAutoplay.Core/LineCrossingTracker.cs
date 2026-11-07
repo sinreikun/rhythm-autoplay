@@ -49,6 +49,12 @@ public sealed class LineCrossingTracker : ILaneTracker
     private const double RescueSuppressSeconds = 0.10;
     private const double RescueRefractorySeconds = 0.09;
     private const double RescueResidual = 0.030;
+    // 救済推定の系統偏り補正（v0.3.54）: 最終ラインの在席は上流ライン
+    // より早く立ち上がる（ノーツが大きく明るい）ため、救済の到達推定は
+    // 実測で中央値 -7ms (Floating) / -10ms (GOODBOUNCE) と前にずれる。
+    // 救済にだけ +8ms を足して中心へ寄せる。通常の鎖推定は -1.3ms と
+    // ほぼ中心にあるため、共通の HitCorrectionSeconds は動かさない。
+    private const double RescueCorrectionSeconds = 0.008;
 
     private sealed class Chain
     {
@@ -325,7 +331,7 @@ public sealed class LineCrossingTracker : ILaneTracker
             return;
         }
         double rescueEst = t + (W(LineYs[^1]) - _judgmentW) / CrossingRate
-            + HitCorrectionSeconds;
+            + HitCorrectionSeconds + RescueCorrectionSeconds;
         foreach ((NoteKind k, double tHit, double _) in _emitted)
         {
             if (k == kind && Math.Abs(tHit - rescueEst) <= RescueSuppressSeconds)
