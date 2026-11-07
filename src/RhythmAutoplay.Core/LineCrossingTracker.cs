@@ -32,6 +32,12 @@ public sealed class LineCrossingTracker : ILaneTracker
     /// </summary>
     public static readonly double[] UpperLineYs = { 0.63, 0.665, 0.70 };
 
+    /// <summary>
+    /// 高密度ライン配置（v0.3.68 実験）: 従来帯に 5 本置き、鎖が 1 本の
+    /// 横断を失っても残りの観測で推定を維持する（fragment+line2 対策）。
+    /// </summary>
+    public static readonly double[] DenseLineYs = { 0.775, 0.81, 0.845, 0.88, 0.905 };
+
     // 横断観測の実効レート（w/秒、v=0.39 空間）。塊の下端が従う 2.13 では
     // なく、在席の立ち上がりという観測量に固有の値で、実測の鎖内ばらつき
     // が最小になる 1.70 を使う（v0.3.44 のログで検証: レート固定・切片のみ

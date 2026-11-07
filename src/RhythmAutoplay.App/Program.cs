@@ -33,6 +33,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     bool watchFlag = args.Contains("--watch", StringComparer.OrdinalIgnoreCase);
     bool printWindowFlag = args.Contains("--print-window", StringComparer.OrdinalIgnoreCase);
     bool upperLinesFlag = args.Contains("--upper-lines", StringComparer.OrdinalIgnoreCase);
+    bool denseLinesFlag = args.Contains("--dense-lines", StringComparer.OrdinalIgnoreCase);
     double offsetMs = 0;
     double strayMs = 0;
     double commitMs = 100;
@@ -68,7 +69,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     }
     var playSession = new PlaySession(
         GameProfile.HypnosyncDefault(),
-        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, LogPresence = logPresenceFlag, Watch = watchFlag, PrintWindowCapture = printWindowFlag, UpperLines = upperLinesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, LogPresence = logPresenceFlag, Watch = watchFlag, PrintWindowCapture = printWindowFlag, UpperLines = upperLinesFlag, DenseLines = denseLinesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
     return playSession.Run();
 }
 

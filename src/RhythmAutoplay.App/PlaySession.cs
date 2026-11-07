@@ -67,6 +67,8 @@ public sealed class PlayOptions
     /// 鎖の寿命と推定ばらつき許容も広げる。
     /// </summary>
     public bool UpperLines { get; init; }
+    /// <summary>従来帯に走査ラインを 5 本置く実験モード（v0.3.68）。</summary>
+    public bool DenseLines { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -158,6 +160,12 @@ public sealed class PlaySession
         bool useLine = string.Equals(_options.Engine, "line", StringComparison.OrdinalIgnoreCase);
         bool useHybrid = string.Equals(_options.Engine, "hybrid", StringComparison.OrdinalIgnoreCase);
         detector.LineMode = useLine || useHybrid;
+        if (_options.DenseLines)
+        {
+            LineCrossingTracker.LineYs = LineCrossingTracker.DenseLineYs;
+            LineCrossingTracker.ChainTimeoutSeconds = 0.45;
+            Log("高密度ライン モード: 走査ライン 0.775/0.81/0.845/0.88/0.905（5 本）");
+        }
         if (_options.UpperLines)
         {
             LineCrossingTracker.LineYs = LineCrossingTracker.UpperLineYs;
