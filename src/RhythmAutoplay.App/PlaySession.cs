@@ -60,6 +60,13 @@ public sealed class PlayOptions
     /// （~17ms）より重い。画面方式はオーバレイ OFF の通常プレイ用。
     /// </summary>
     public bool PrintWindowCapture { get; init; }
+    /// <summary>
+    /// 検出範囲と発火ラインの分離（v0.3.66、実験）: 走査ラインを判定文字帯
+    /// より上（0.63/0.665/0.70）に置き、横断観測を演出の無い帯域で完結させる。
+    /// 発火は本物の判定ラインへの到達推定のまま。ライン間隔が広がる分、
+    /// 鎖の寿命と推定ばらつき許容も広げる。
+    /// </summary>
+    public bool UpperLines { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -151,6 +158,13 @@ public sealed class PlaySession
         bool useLine = string.Equals(_options.Engine, "line", StringComparison.OrdinalIgnoreCase);
         bool useHybrid = string.Equals(_options.Engine, "hybrid", StringComparison.OrdinalIgnoreCase);
         detector.LineMode = useLine || useHybrid;
+        if (_options.UpperLines)
+        {
+            LineCrossingTracker.LineYs = LineCrossingTracker.UpperLineYs;
+            LineCrossingTracker.ChainTimeoutSeconds = 0.55;
+            LineCrossingTracker.MaxEstimateDeviationSeconds = 0.030;
+            Log("上部ライン モード: 走査ライン 0.63/0.665/0.70（検出範囲と発火ラインの分離）");
+        }
         for (int lane = 0; lane < trackers.Length; lane++)
         {
             trackers[lane] = useBand

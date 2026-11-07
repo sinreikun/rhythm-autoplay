@@ -22,7 +22,15 @@ public sealed class LineCrossingTracker : ILaneTracker
     /// 横断が次のノーツの鎖に紛れ、早すぎる発射が先行ノーツの判定を
     /// 奪ったとみられる。ラインは効果帯の手前までに限る。
     /// </remarks>
-    public static readonly double[] LineYs = { 0.80, 0.845, 0.89 };
+    public static double[] LineYs { get; set; } = { 0.80, 0.845, 0.89 };
+
+    /// <summary>
+    /// 検出範囲と発火ラインの分離（v0.3.66、マスター発案）用の上部ライン。
+    /// 判定文字の帯（実測 y≈0.78〜0.86、矢印と重なると 2 段で ≈0.71 まで）と
+    /// 判定ライン際の星＋円エフェクトを避け、横断観測だけを文字帯より上で
+    /// 完結させる。発火は従来どおり本物の判定ラインへの到達推定で行う。
+    /// </summary>
+    public static readonly double[] UpperLineYs = { 0.63, 0.665, 0.70 };
 
     // 横断観測の実効レート（w/秒、v=0.39 空間）。塊の下端が従う 2.13 では
     // なく、在席の立ち上がりという観測量に固有の値で、実測の鎖内ばらつき
@@ -33,10 +41,12 @@ public sealed class LineCrossingTracker : ILaneTracker
     private const double CrossingRate = 1.70;
     private const double HitCorrectionSeconds = -0.003;
     private const double AttachToleranceSeconds = 0.035;
-    private const double MaxEstimateDeviationSeconds = 0.018;
+    /// <summary>推定ばらつきの許容 [秒]。上部ラインでは横断間隔が広がり誤差が増えるため可変にする。</summary>
+    public static double MaxEstimateDeviationSeconds { get; set; } = 0.018;
     private const double EmitHorizonSeconds = 0.35;
     private const double RefractorySeconds = 0.05;
-    private const double ChainTimeoutSeconds = 0.30;
+    /// <summary>鎖の失効までの時間 [秒]。最長の横断間隔より長く取る必要があるため可変にする。</summary>
+    public static double ChainTimeoutSeconds { get; set; } = 0.30;
 
     // 最終ライン救済（v0.3.53）: 上流ラインで見えたのに鎖が予約に至らな
     // かったノーツが、最終ライン (0.89) を横切る瞬間にだけ拾う終端
