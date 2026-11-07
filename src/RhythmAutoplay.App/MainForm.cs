@@ -270,6 +270,10 @@ public sealed class MainForm : Form
             OffsetMilliseconds = _settings.OffsetMilliseconds,
             DurationSeconds = 0,
             EventLogDirectory = GuiSettings.EventLogDirectory,
+            // オーバレイ表示中はウィンドウ単体キャプチャにする（v0.3.63）。
+            // 画面方式だとオーバレイ自身が映り込んで検出が死ぬため。
+            // 切り替えはセッション開始時点のチェック状態で決まる。
+            PrintWindowCapture = _overlayCheck.Checked,
         };
         var session = new PlaySession(_effectiveProfile, options, AppendLog);
         _session = session;

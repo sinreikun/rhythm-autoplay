@@ -19,8 +19,12 @@ public sealed class CapturedFrame
 }
 
 /// <summary>
-/// 対象ウィンドウのクライアント領域を BitBlt でキャプチャする。
-/// 画面上に見えている状態のウィンドウが前提（重なった別ウィンドウは映り込む）。
+/// 対象ウィンドウのクライアント領域をキャプチャする。既定は画面 DC から
+/// の BitBlt（重なった別ウィンドウやオーバレイが映り込む）。UsePrintWindow
+/// の場合は PrintWindow で対象ウィンドウだけを描かせるため、オーバレイを
+/// 表示したままでも検出が汚染されない（v0.3.63）。PrintWindow が失敗した
+/// フレームは画面方式に落とし、一度失敗したらそのセッションでは画面
+/// 方式に固定する。
 /// セッション全体のマスター時計（Stopwatch）もここが持つ。
 /// </summary>
 public sealed class WindowCapturer : IDisposable
@@ -33,8 +37,17 @@ public sealed class WindowCapturer : IDisposable
     private int _bitmapWidth;
     private int _bitmapHeight;
     private byte[] _buffer = Array.Empty<byte>();
+    private IntPtr _srcDc;
+    private IntPtr _srcBitmap;
+    private IntPtr _srcOldBitmap;
+    private int _srcWidth;
+    private int _srcHeight;
+    private bool _printWindowFailed;
 
     public WindowCapturer(IntPtr hwnd) => _hwnd = hwnd;
+
+    /// <summary>PrintWindow 方式で撮るか（セッション開始時に設定する）。</summary>
+    public bool UsePrintWindow { get; set; }
 
     public double Now => _clock.Elapsed.TotalSeconds;
 
@@ -68,31 +81,104 @@ public sealed class WindowCapturer : IDisposable
 
         EnsureBitmap(width, height);
 
+        double time = Now;
+        bool viaPrintWindow = UsePrintWindow && !_printWindowFailed
+            && CaptureViaPrintWindow(width, height, origin);
+        if (!viaPrintWindow)
+        {
+            IntPtr screenDc = GetDC(IntPtr.Zero);
+            try
+            {
+                BitBlt(_memDc, 0, 0, width, height, screenDc, origin.X, origin.Y, Srccopy);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, screenDc);
+            }
+        }
+
+        var bmi = new BITMAPINFO
+        {
+            biSize = (uint)Marshal.SizeOf<BITMAPINFO>(),
+            biWidth = width,
+            biHeight = -height, // 負 = 上から下への並び
+            biPlanes = 1,
+            biBitCount = 32,
+            biCompression = 0,
+        };
+        int lines = GetDIBits(_memDc, _bitmap, 0, (uint)height, _buffer, ref bmi, 0);
+        if (lines == 0)
+        {
+            throw new InvalidOperationException("GetDIBits に失敗しました。");
+        }
+        return new CapturedFrame { Bgra = _buffer, Width = width, Height = height, TimeSeconds = time };
+    }
+
+    /// <summary>
+    /// PrintWindow でウィンドウ全体を予備ビットマップに描かせ、
+    /// クライアント領域だけを本体ビットマップへ切り出す。失敗したら
+    /// false を返し、このセッションでは画面方式に固定する。
+    /// </summary>
+    private bool CaptureViaPrintWindow(int clientWidth, int clientHeight, POINT clientOrigin)
+    {
+        if (!GetWindowRect(_hwnd, out RECT win))
+        {
+            _printWindowFailed = true;
+            return false;
+        }
+        int winWidth = win.Right - win.Left;
+        int winHeight = win.Bottom - win.Top;
+        if (winWidth <= 0 || winHeight <= 0)
+        {
+            _printWindowFailed = true;
+            return false;
+        }
+        EnsureSrcBitmap(winWidth, winHeight);
+        if (!PrintWindow(_hwnd, _srcDc, 2)) // PW_RENDERFULLCONTENT
+        {
+            _printWindowFailed = true;
+            return false;
+        }
+        int offX = clientOrigin.X - win.Left;
+        int offY = clientOrigin.Y - win.Top;
+        BitBlt(_memDc, 0, 0, clientWidth, clientHeight, _srcDc, offX, offY, Srccopy);
+        return true;
+    }
+
+    private void EnsureSrcBitmap(int width, int height)
+    {
+        if (_srcBitmap != IntPtr.Zero && width == _srcWidth && height == _srcHeight)
+        {
+            return;
+        }
+        DisposeSrcBitmap();
         IntPtr screenDc = GetDC(IntPtr.Zero);
         try
         {
-            double time = Now;
-            BitBlt(_memDc, 0, 0, width, height, screenDc, origin.X, origin.Y, Srccopy);
-
-            var bmi = new BITMAPINFO
-            {
-                biSize = (uint)Marshal.SizeOf<BITMAPINFO>(),
-                biWidth = width,
-                biHeight = -height, // 負 = 上から下への並び
-                biPlanes = 1,
-                biBitCount = 32,
-                biCompression = 0,
-            };
-            int lines = GetDIBits(_memDc, _bitmap, 0, (uint)height, _buffer, ref bmi, 0);
-            if (lines == 0)
-            {
-                throw new InvalidOperationException("GetDIBits に失敗しました。");
-            }
-            return new CapturedFrame { Bgra = _buffer, Width = width, Height = height, TimeSeconds = time };
+            _srcDc = CreateCompatibleDC(screenDc);
+            _srcBitmap = CreateCompatibleBitmap(screenDc, width, height);
+            _srcOldBitmap = SelectObject(_srcDc, _srcBitmap);
         }
         finally
         {
             ReleaseDC(IntPtr.Zero, screenDc);
+        }
+        _srcWidth = width;
+        _srcHeight = height;
+    }
+
+    private void DisposeSrcBitmap()
+    {
+        if (_srcBitmap != IntPtr.Zero)
+        {
+            SelectObject(_srcDc, _srcOldBitmap);
+            DeleteObject(_srcBitmap);
+            _srcBitmap = IntPtr.Zero;
+        }
+        if (_srcDc != IntPtr.Zero)
+        {
+            DeleteDC(_srcDc);
+            _srcDc = IntPtr.Zero;
         }
     }
 
@@ -134,7 +220,11 @@ public sealed class WindowCapturer : IDisposable
         }
     }
 
-    public void Dispose() => DisposeBitmap();
+    public void Dispose()
+    {
+        DisposeBitmap();
+        DisposeSrcBitmap();
+    }
 
     private const int Srccopy = 0x00CC0020;
 
@@ -162,6 +252,8 @@ public sealed class WindowCapturer : IDisposable
     }
 
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT pt);
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);

@@ -54,22 +54,12 @@ public sealed class OverlayForm : Form
 
     protected override bool ShowWithoutActivation => true;
 
-    private const uint WdaExcludeFromCapture = 0x00000011;
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        // 本体のキャプチャは画面 DC からの BitBlt で、ゲームの真上に
-        // 重なるこのオーバレイがそのまま映り込む。検出器がオーバレイ
-        // 自身（マゼンタ地や描画）を見て検出が死ぬため（v0.3.60 実機
-        // 報告）、表示アフィニティでキャプチャから除外する。ユーザー
-        // の目には今まで通り見える。編集モードの RecreateHandle でも
-        // ここを通るので追従できる。
-        SetWindowDisplayAffinity(Handle, WdaExcludeFromCapture);
-    }
+    // v0.3.61 で入れたキャプチャ除外（WDA_EXCLUDEFROMCAPTURE）は
+    // v0.3.63 で撤回した。除外は PrintScreen やリモートデスクトップ
+    // （HopToDesk）の映像からもオーバレイを消してしまい、リモートで
+    // 見ているマスターには表示自体が消えたように見えたため。代わりに
+    // オーバレイ表示中のセッションは PrintWindow 方式で対象ウィンドウ
+    // だけを撮るので、オーバレイは通常通り表示してよい。
 
     protected override CreateParams CreateParams
     {

@@ -51,6 +51,15 @@ public sealed class PlayOptions
     /// %LOCALAPPDATA%\RhythmAutoplay\watch\&lt;日時&gt;\。挙動は変えない。
     /// </summary>
     public bool Watch { get; init; }
+    /// <summary>
+    /// ウィンドウ単体キャプチャ（v0.3.63）: 画面 BitBlt の代わりに
+    /// PrintWindow で対象ウィンドウだけを描かせる。重なったオーバレイや
+    /// 別ウィンドウが映り込まないため、検出オーバレイを表示したまま
+    /// プレイできる（GUI はオーバレイ表示 ON のセッションで自動的に
+    /// この方式になる）。代償として 1 フレーム ~27ms と画面方式
+    /// （~17ms）より重い。画面方式はオーバレイ OFF の通常プレイ用。
+    /// </summary>
+    public bool PrintWindowCapture { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -128,7 +137,7 @@ public sealed class PlaySession
             return 1;
         }
 
-        using var capturer = new WindowCapturer(hwnd);
+        using var capturer = new WindowCapturer(hwnd) { UsePrintWindow = _options.PrintWindowCapture };
         var detector = new FrameDetector(_profile);
         var trackers = new ILaneTracker[_profile.LaneCount];
         // 出現ゲートは判定ライン際の静止物（BREAK バー等）だけを弾く緩い
