@@ -35,6 +35,13 @@ public sealed class PlayOptions
     /// フィット窓（直近12標本 vs 全標本など）の優劣をオフラインで事後評価するため。
     /// </summary>
     public bool LogSamples { get; init; }
+    /// <summary>
+    /// 診断用（v0.3.56）: ライン在席のビットマスク（ライン×色種）の変化を
+    /// PL 行としてイベントログに残す。在席そのものは従来ログに残らず、
+    /// 取りこぼしの内訳（検出盲 / 鎖の不成立 / 救済ゲート不通過）を
+    /// 事後に切り分けられなかったための計装。挙動は変えない。
+    /// </summary>
+    public bool LogPresence { get; init; }
     /// <summary>自動終了までの秒数。0 = 無制限（F9 / Ctrl+C で終了）。</summary>
     public int DurationSeconds { get; init; }
     /// <summary>予約・発火イベントを時刻つきで書き出す診断ログの保存先。null で無効。</summary>
@@ -330,6 +337,9 @@ public sealed class PlaySession
         // 適用する。実在する同キー連続ノーツは音楽的に 35ms 未満では
         // 並ばない前提。
         var recentSchedules = new List<(string Signature, double THit, double At)>();
+        // ライン在席ログ（v0.3.56、診断用）: レーンごとの前フレームの
+        // 在席マスク。ビット位置は ライン番号×5 + 色種番号。
+        var prevPresenceMask = new int[_profile.LaneCount];
         // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
         // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
         // (レーン, 署名, 現在の到達時刻) → タグ。修正のたびに時刻を更新する。
@@ -365,6 +375,38 @@ public sealed class PlaySession
 
             List<NoteDetection> detections = detector.Detect(frame);
             detMs += (capturer.Now - capEnd) * 1000.0;
+            if (_options.LogPresence)
+            {
+                var masks = new int[_profile.LaneCount];
+                foreach (NoteDetection d in detections)
+                {
+                    if (!d.IsLinePresence || d.Kind == NoteKind.Arrow)
+                    {
+                        continue;
+                    }
+                    int li = -1;
+                    for (int i = 0; i < LineCrossingTracker.LineYs.Length; i++)
+                    {
+                        if (Math.Abs(d.Y - LineCrossingTracker.LineYs[i]) < 0.01)
+                        {
+                            li = i;
+                            break;
+                        }
+                    }
+                    if (li >= 0 && d.Lane >= 0 && d.Lane < masks.Length)
+                    {
+                        masks[d.Lane] |= 1 << (li * 5 + (int)d.Kind);
+                    }
+                }
+                for (int lane = 0; lane < masks.Length; lane++)
+                {
+                    if (masks[lane] != prevPresenceMask[lane])
+                    {
+                        LogEvent($"PL t={now:F3} lane={lane} mask={masks[lane]:X4}");
+                        prevPresenceMask[lane] = masks[lane];
+                    }
+                }
+            }
             double trkStart = capturer.Now;
 
             foreach (IGrouping<int, NoteDetection> group in detections.GroupBy(d => d.Lane))

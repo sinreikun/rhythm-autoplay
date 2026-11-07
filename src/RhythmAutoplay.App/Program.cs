@@ -29,6 +29,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     // --log-samples は値を持たないフラグ。末尾に置かれても拾えるよう Contains で見る
     // （値つき引数のループは末尾要素を見ないため、v0.3.39 では末尾指定が無効だった）。
     bool logSamplesFlag = args.Contains("--log-samples", StringComparer.OrdinalIgnoreCase);
+    bool logPresenceFlag = args.Contains("--log-presence", StringComparer.OrdinalIgnoreCase);
     double offsetMs = 0;
     double strayMs = 0;
     double commitMs = 100;
@@ -64,7 +65,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     }
     var playSession = new PlaySession(
         GameProfile.HypnosyncDefault(),
-        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, LogPresence = logPresenceFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
     return playSession.Run();
 }
 
