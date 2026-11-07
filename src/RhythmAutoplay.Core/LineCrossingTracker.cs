@@ -49,12 +49,13 @@ public sealed class LineCrossingTracker : ILaneTracker
     private const double RescueSuppressSeconds = 0.10;
     private const double RescueRefractorySeconds = 0.09;
     private const double RescueResidual = 0.030;
-    // 救済推定の系統偏り補正（v0.3.54）: 最終ラインの在席は上流ライン
-    // より早く立ち上がる（ノーツが大きく明るい）ため、救済の到達推定は
-    // 実測で中央値 -7ms (Floating) / -10ms (GOODBOUNCE) と前にずれる。
-    // 救済にだけ +8ms を足して中心へ寄せる。通常の鎖推定は -1.3ms と
-    // ほぼ中心にあるため、共通の HitCorrectionSeconds は動かさない。
-    private const double RescueCorrectionSeconds = 0.008;
+    // 救済推定の系統偏り補正は REFUTED（v0.3.54 で実験し v0.3.55 で撤回）:
+    // 救済の到達推定は実測で中央値 -7ms (Floating) / -10ms (GOODBOUNCE)
+    // と前にずれるが、+8ms を足すと推定の中央値は中心へ寄る一方で
+    // CRINGE は両曲とも悪化した (Floating 28→33、GOODBOUNCE 96→110)。
+    // 裏付けゲートが補正後の推定で別の断片を通し、ハイブリッド側の
+    // 抑制関係も変わるため、単純な平行移動は利得にならない。
+    private const double RescueCorrectionSeconds = 0.0;
 
     private sealed class Chain
     {
