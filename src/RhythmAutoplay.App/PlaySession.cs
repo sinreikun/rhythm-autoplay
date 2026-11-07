@@ -80,11 +80,14 @@ public sealed class PlayOptions
     /// "line"（固定ライン横断、v0.3.42）、"line1"（単ライン機械式、
     /// v0.3.73）、"track"（全飛行の軌跡追跡、
     /// v0.3.11 系）、"band"（帯域トリガー、v0.3.14）。
-    /// 既定は hybrid（v0.3.52）。v0.3.51 までは既定が "track" で、GUI に
+    /// 既定は line1（v0.3.84）。v0.3.52〜v0.3.83 の既定は hybrid で、
+    /// line1 の検証実績（2026-11-07〜08 の全曲ローテーション）が
+    /// GUI 起動では選ばれない状態だったため、マスターの指示で変更。
+    /// v0.3.51 までは既定が "track" で、GUI に
     /// エンジン選択肢が無いため、検証で使った hybrid が GUI 起動では
     /// 選ばれない不具合があった（マスターの実プレイで発覚）。
     /// </summary>
-    public string Engine { get; init; } = "hybrid";
+    public string Engine { get; init; } = "line1";
 }
 
 /// <summary>プレイ中の統計。GUI がポーリングして表示する。</summary>

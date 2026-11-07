@@ -40,7 +40,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     double commitMs = 100;
     double holdMs = 0;
     int seconds = 0;
-    string engine = "hybrid";
+    string engine = "line1";
     for (int i = 1; i < args.Length - 1; i++)
     {
         if (args[i] == "--offset-ms" && double.TryParse(args[i + 1], out double v))
