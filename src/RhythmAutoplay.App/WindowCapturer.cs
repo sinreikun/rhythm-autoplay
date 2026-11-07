@@ -11,11 +11,23 @@ public sealed class CapturedFrame
     public required int Height { get; init; }
     public required double TimeSeconds { get; init; }
 
+    // コンテンツ矩形（v0.3.71）: 固定アスペクトのゲームは横長ウィンドウで
+    // 左右に黒帯を出す。検出はこの矩形を基準に行う。Width/Height は
+    // バッファ全体（画像保存用）、View* が検出用の矩形。
+    public int ViewX { get; init; }
+    public int ViewY { get; init; }
+    public int ViewWidth { get; init; }
+    public int ViewHeight { get; init; }
+
     public (byte R, byte G, byte B) PixelAt(int x, int y)
     {
         int i = (y * Width + x) * 4;
         return (Bgra[i + 2], Bgra[i + 1], Bgra[i]);
     }
+
+    /// <summary>コンテンツ矩形内の座標で標本を取る（検出専用）。</summary>
+    public (byte R, byte G, byte B) ViewPixelAt(int x, int y)
+        => PixelAt(x + ViewX, y + ViewY);
 }
 
 /// <summary>
@@ -121,7 +133,121 @@ public sealed class WindowCapturer : IDisposable
         {
             throw new InvalidOperationException("GetDIBits に失敗しました。");
         }
-        return new CapturedFrame { Bgra = _buffer, Width = width, Height = height, TimeSeconds = time };
+        (int vx, int vy, int vw, int vh) = ContentView(width, height);
+        return new CapturedFrame
+        {
+            Bgra = _buffer, Width = width, Height = height, TimeSeconds = time,
+            ViewX = vx, ViewY = vy, ViewWidth = vw, ViewHeight = vh,
+        };
+    }
+
+    // コンテンツ矩形の検出（v0.3.71）。黒帯（各チャンネル <= 6）でない
+    // 画素の外接矩形を端から探す。有効な候補が 2 フレーム連続で一致
+    // したら確定し、以後は再計算しない（サイズ変更でリセット）。
+    // フェード等の真っ黒フレームでは候補が崩れるため確定しない。
+    private (int, int, int, int) _view;
+    private (int, int, int, int) _viewCandidate;
+    private int _viewStable;
+    private bool _viewLocked;
+    private int _viewForWidth, _viewForHeight;
+
+    private (int X, int Y, int W, int H) ContentView(int width, int height)
+    {
+        if (_viewLocked && _viewForWidth == width && _viewForHeight == height)
+        {
+            return _view;
+        }
+        (int, int, int, int) full = (0, 0, width, height);
+        var cand = ScanContentRect(width, height);
+        if (cand == full)
+        {
+            // 黒帯なし（または検出不能）。そのまま全画面を確定とする。
+            _view = full;
+            _viewLocked = true;
+            _viewForWidth = width;
+            _viewForHeight = height;
+            return _view;
+        }
+        if (cand.W < 100 || cand.H < 100)
+        {
+            return _viewLocked ? _view : full; // 崩れた候補は採用しない
+        }
+        if (Math.Abs(cand.Item1 - _viewCandidate.Item1) <= 3
+            && Math.Abs(cand.Item2 - _viewCandidate.Item2) <= 3
+            && Math.Abs(cand.Item3 - _viewCandidate.Item3) <= 3
+            && Math.Abs(cand.Item4 - _viewCandidate.Item4) <= 3)
+        {
+            _viewStable++;
+        }
+        else
+        {
+            _viewCandidate = cand;
+            _viewStable = 0;
+        }
+        if (_viewStable >= 1)
+        {
+            _view = cand;
+            _viewLocked = true;
+            _viewForWidth = width;
+            _viewForHeight = height;
+            return _view;
+        }
+        return _viewLocked ? _view : cand;
+    }
+
+    private (int X, int Y, int W, int H) ScanContentRect(int width, int height)
+    {
+        bool IsBar(int x, int y)
+        {
+            int i = (y * width + x) * 4;
+            return _buffer[i] <= 6 && _buffer[i + 1] <= 6 && _buffer[i + 2] <= 6;
+        }
+        int left = width, right = -1, top = height, bottom = -1;
+        for (int x = 0; x < width; x++)
+        {
+            bool any = false;
+            for (int y = 0; y < height; y += 4)
+            {
+                if (!IsBar(x, y)) { any = true; break; }
+            }
+            if (any) { left = x; break; }
+        }
+        if (left >= width)
+        {
+            return (0, 0, 0, 0); // 全面黒
+        }
+        for (int x = width - 1; x > left; x--)
+        {
+            bool any = false;
+            for (int y = 0; y < height; y += 4)
+            {
+                if (!IsBar(x, y)) { any = true; break; }
+            }
+            if (any) { right = x; break; }
+        }
+        for (int y = 0; y < height; y++)
+        {
+            bool any = false;
+            for (int x = left; x <= right; x += 4)
+            {
+                if (!IsBar(x, y)) { any = true; break; }
+            }
+            if (any) { top = y; break; }
+        }
+        for (int y = height - 1; y > top; y--)
+        {
+            bool any = false;
+            for (int x = left; x <= right; x += 4)
+            {
+                if (!IsBar(x, y)) { any = true; break; }
+            }
+            if (any) { bottom = y; break; }
+        }
+        if (right < left || bottom < top)
+        {
+            return (0, 0, 0, 0);
+        }
+        return (left, top, right - left + 1, bottom - top + 1);
     }
 
     /// <summary>

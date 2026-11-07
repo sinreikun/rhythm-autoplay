@@ -43,7 +43,7 @@ public sealed class FrameDetector
     {
         var results = new List<NoteDetection>();
         LaneGeometry geo = _profile.Geometry;
-        int w = frame.Width, h = frame.Height;
+        int w = frame.ViewWidth, h = frame.ViewHeight;
         _sx = w / BaseFrameWidth;
         _sy = h / BaseFrameHeight;
         int pyTop = (int)(geo.TopY * h);
@@ -54,7 +54,10 @@ public sealed class FrameDetector
         // 2026-11-06）、レーンパスでは帯の内側だけ緩い分類と橋渡しを使う。
         var bands = new List<(int TopPy, int BottomPy)>();
         DetectArrows(frame, pyTop, pyJudge, results, bands);
-        LastBands = bands;
+        // 描画側はフレーム全体の座標で受けるため、帯だけ全体座標へ戻す。
+        LastBands = bands
+            .Select(b => (b.TopPy + frame.ViewY, b.BottomPy + frame.ViewY))
+            .ToList();
         for (int lane = 0; lane < _profile.LaneCount; lane++)
         {
             DetectLane(frame, lane, pyTop, pyJudge, bands, results);
@@ -79,7 +82,7 @@ public sealed class FrameDetector
         List<NoteDetection> results)
     {
         LaneGeometry geo = _profile.Geometry;
-        int w = frame.Width, h = frame.Height;
+        int w = frame.ViewWidth, h = frame.ViewHeight;
         foreach (double lineY in LineCrossingTracker.LineYs)
         {
             int pyC = (int)(lineY * h);
@@ -119,7 +122,7 @@ public sealed class FrameDetector
                     foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
                     {
                         int px = Math.Clamp((int)(cx * w + off), 0, w - 1);
-                        var (r, g, b) = frame.PixelAt(px, py);
+                        var (r, g, b) = frame.ViewPixelAt(px, py);
                         PixelColor c = ColorClassifier.Classify(r, g, b);
                         if (c == PixelColor.None && inBand)
                         {
@@ -155,7 +158,7 @@ public sealed class FrameDetector
         List<(int TopPy, int BottomPy)> bands, List<NoteDetection> results)
     {
         LaneGeometry geo = _profile.Geometry;
-        int w = frame.Width, h = frame.Height;
+        int w = frame.ViewWidth, h = frame.ViewHeight;
 
         bool InBand(int py)
         {
@@ -202,8 +205,8 @@ public sealed class FrameDetector
             // 発光は 100px 以上になるため、上限は画面高の 8.5% に置く。
             // 矢印の帯を橋渡しした塊は帯の高さぶん長くなるため上限を緩める。
             int maxBlobPx = bridged
-                ? Math.Max(V(40), (int)(frame.Height * 0.12))
-                : Math.Max(V(40), (int)(frame.Height * 0.085));
+                ? Math.Max(V(40), (int)(h * 0.12))
+                : Math.Max(V(40), (int)(h * 0.085));
             if (runLast - runStart > maxBlobPx)
             {
                 return;
@@ -244,7 +247,7 @@ public sealed class FrameDetector
             foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
             {
                 int px = Clamp((int)(cx * w + off), 0, w - 1);
-                var (r, g, b) = frame.PixelAt(px, py);
+                var (r, g, b) = frame.ViewPixelAt(px, py);
                 PixelColor c = ColorClassifier.Classify(r, g, b);
                 if (c == PixelColor.None && inBand)
                 {
@@ -313,11 +316,11 @@ public sealed class FrameDetector
 
     private static int MeasureWidth(CapturedFrame frame, int centerPx, int py, PixelColor color)
     {
-        int w = frame.Width;
+        int w = frame.ViewWidth;
         int left = centerPx;
         while (left > 0)
         {
-            var (r, g, b) = frame.PixelAt(left - 1, py);
+            var (r, g, b) = frame.ViewPixelAt(left - 1, py);
             if (ColorClassifier.Classify(r, g, b) != color)
             {
                 break;
@@ -327,7 +330,7 @@ public sealed class FrameDetector
         int right = centerPx;
         while (right < w - 1)
         {
-            var (r, g, b) = frame.PixelAt(right + 1, py);
+            var (r, g, b) = frame.ViewPixelAt(right + 1, py);
             if (ColorClassifier.Classify(r, g, b) != color)
             {
                 break;
@@ -345,7 +348,7 @@ public sealed class FrameDetector
         List<NoteDetection> results, List<(int TopPy, int BottomPy)> bands)
     {
         LaneGeometry geo = _profile.Geometry;
-        int w = frame.Width, h = frame.Height;
+        int w = frame.ViewWidth, h = frame.ViewHeight;
 
         var candidateRows = new List<ArrowRow>();
         int scanFrom = pyTop + (int)((pyJudge - pyTop) * 0.08);
@@ -574,7 +577,7 @@ public sealed class FrameDetector
 
     private static bool IsMark(CapturedFrame frame, int px, int py)
     {
-        var (r, g, b) = frame.PixelAt(px, py);
+        var (r, g, b) = frame.ViewPixelAt(px, py);
         if (ColorClassifier.Classify(r, g, b) != PixelColor.None)
         {
             return true;
@@ -590,7 +593,7 @@ public sealed class FrameDetector
     /// </summary>
     private static bool IsWhiteMark(CapturedFrame frame, int px, int py)
     {
-        var (r, g, b) = frame.PixelAt(px, py);
+        var (r, g, b) = frame.ViewPixelAt(px, py);
         var (_, s, v) = ColorClassifier.RgbToHsv(r, g, b);
         return v > 0.45 && s < 0.35;
     }
