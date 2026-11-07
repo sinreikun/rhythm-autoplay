@@ -875,6 +875,77 @@ public class LineCrossingTrackerTests
         }
         Assert.Equal(0, scheduledCount);
     }
+
+    private static List<NoteDetection> WindowPresence(double t, params (int Line, double From, double To)[] windows)
+    {
+        var dets = new List<NoteDetection>();
+        foreach ((int line, double from, double to) in windows)
+        {
+            if (t >= from && t <= to)
+            {
+                dets.Add(new NoteDetection(0, NoteKind.Red, null, 0.4,
+                    LineCrossingTracker.LineYs[line], t, IsLinePresence: true));
+            }
+        }
+        return dets;
+    }
+
+    [Fact]
+    public void OccludedMiddleLine_RescuedAtLastLine()
+    {
+        // v0.3.53 の最終ライン救済: ライン0 の在席が遅れて立ち上がり
+        // (断片の推定が 45ms ずれる)、ライン1 が隠蔽で欠落、ライン2 の
+        // 横断は接続許容 (35ms) を超えて鎖に付かない。それでも断片の
+        // 推定と救済推定が 60ms 以内で一致するため、救済が 1 回だけ
+        // 発火し、到達時刻は真値 (1.3672) の近くに来る。
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        var got = new List<ScheduledNote>();
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            got.AddRange(tracker.Observe(t, WindowPresence(t,
+                (0, 1.045, 1.075), (2, 1.258, 1.288))));
+        }
+        ScheduledNote note = Assert.Single(got);
+        Assert.Equal(LineCrossingTracker.LineYs[2], note.FirstY);
+        Assert.Equal(1, note.SampleCount);
+        Assert.True(Math.Abs(note.THit - 1.3672) < 0.020, $"tHit={note.THit:F4}");
+    }
+
+    [Fact]
+    public void OrphanLastLineCrossing_WithoutFragment_NeverSchedules()
+    {
+        // 上流の裏付けが無い最終ライン横断だけでは救済は発火しない
+        // (判定文字の漂流を拾わない)。
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        int scheduledCount = 0;
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            scheduledCount += tracker.Observe(t, WindowPresence(t, (2, 1.258, 1.288))).Count;
+        }
+        Assert.Equal(0, scheduledCount);
+    }
+
+    [Fact]
+    public void Rescue_SuppressedWhenScheduleNearby()
+    {
+        // 裏付けのある救済候補でも、推定到達の ±100ms 以内に同種の
+        // 予約が既にあれば発火しない (先行ノーツの残響対策)。
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        var got = new List<ScheduledNote>();
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            got.AddRange(tracker.Observe(t, WindowPresence(t,
+                (0, 1.000, 1.030), (1, 1.135, 1.165),   // 正常な先行ノーツ
+                (0, 1.128, 1.158), (2, 1.335, 1.365)))); // 遅れた断片 + 最終ライン
+        }
+        Assert.Single(got);
+    }
 }
 
 public class HybridGapFillTrackerTests

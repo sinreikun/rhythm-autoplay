@@ -38,6 +38,18 @@ public sealed class LineCrossingTracker : ILaneTracker
     private const double RefractorySeconds = 0.05;
     private const double ChainTimeoutSeconds = 0.30;
 
+    // 最終ライン救済（v0.3.53）: 上流ラインで見えたのに鎖が予約に至らな
+    // かったノーツが、最終ライン (0.89) を横切る瞬間にだけ拾う終端
+    // トリガ。v0.3.47 の「4 本目の鎖ライン」とは別物で、鎖には一切
+    // 入れない。発火条件は (a) 未予約の鎖の到達推定と 60ms 以内で
+    // 一致する（裏付け）、(b) 同種の予約が推定到達の ±100ms 以内に
+    // 無い、(c) 同種の救済から 90ms 以上空いている、の 3 つ全て。
+    // 判定文字の漂流は上流の裏付けを持たないため、ここでは発火しない。
+    private const double RescueAgreeSeconds = 0.06;
+    private const double RescueSuppressSeconds = 0.10;
+    private const double RescueRefractorySeconds = 0.09;
+    private const double RescueResidual = 0.030;
+
     private sealed class Chain
     {
         public int Id;
@@ -58,6 +70,8 @@ public sealed class LineCrossingTracker : ILaneTracker
     private readonly List<ExpiredTrack> _expired = new();
     private readonly List<RevisedNote> _revisions = new();
     private readonly List<(int Id, double Time, double Y)> _sampleLog = new();
+    private readonly List<(NoteKind Kind, double THit, double At)> _emitted = new();
+    private readonly double[] _lastRescueAt = new double[5];
     private readonly bool[,] _prevPresence = new bool[LineYs.Length, 5];
     private readonly double[,] _lastCrossAt = new double[LineYs.Length, 5];
     private int _nextId = 1;
@@ -85,6 +99,10 @@ public sealed class LineCrossingTracker : ILaneTracker
             {
                 _lastCrossAt[i, k] = double.NegativeInfinity;
             }
+        }
+        for (int k = 0; k < 5; k++)
+        {
+            _lastRescueAt[k] = double.NegativeInfinity;
         }
     }
 
@@ -122,6 +140,7 @@ public sealed class LineCrossingTracker : ILaneTracker
             _frameDelta = Math.Clamp(timeSeconds - _lastFrameTime, 0.005, 0.1);
         }
         _lastFrameTime = timeSeconds;
+        _emitted.RemoveAll(e => timeSeconds - e.At > 1.5);
 
         // 矢印は従来方式へ。
         var arrows = new List<NoteDetection>();
@@ -287,6 +306,59 @@ public sealed class LineCrossingTracker : ILaneTracker
                 _sampleLog.Add((ch.Id, t, LineYs[line]));
             }
         }
+        else
+        {
+            TryRescue(t, kind, scheduled);
+        }
+    }
+
+    /// <summary>
+    /// 最終ライン救済（v0.3.53）。最終ラインの横断がどの鎖にも接続
+    /// できなかった場合に限り、未予約の鎖の到達推定が裏付けとして
+    /// 一致すれば、その横断 1 点から到達時刻を推定して予約する。
+    /// 裏付けに使った鎖は予約済みにして二重発射を防ぐ。
+    /// </summary>
+    private void TryRescue(double t, NoteKind kind, List<ScheduledNote> scheduled)
+    {
+        if (t - _lastRescueAt[(int)kind] < RescueRefractorySeconds)
+        {
+            return;
+        }
+        double rescueEst = t + (W(LineYs[^1]) - _judgmentW) / CrossingRate
+            + HitCorrectionSeconds;
+        foreach ((NoteKind k, double tHit, double _) in _emitted)
+        {
+            if (k == kind && Math.Abs(tHit - rescueEst) <= RescueSuppressSeconds)
+            {
+                return;
+            }
+        }
+        Chain? corroborator = null;
+        double bestAgree = double.PositiveInfinity;
+        foreach (Chain ch in _chains)
+        {
+            if (ch.Kind != kind || ch.Scheduled || ch.Crossings.Count == 0)
+            {
+                continue;
+            }
+            double agree = Math.Abs(EstimateHit(ch, out _) - rescueEst);
+            if (agree < bestAgree)
+            {
+                bestAgree = agree;
+                corroborator = ch;
+            }
+        }
+        if (corroborator == null || bestAgree > RescueAgreeSeconds)
+        {
+            return;
+        }
+        corroborator.Scheduled = true;
+        corroborator.ScheduledHit = rescueEst;
+        _lastRescueAt[(int)kind] = t;
+        _emitted.Add((kind, rescueEst, t));
+        scheduled.Add(new ScheduledNote(
+            kind, null, rescueEst, RescueResidual, 1,
+            LineYs[^1], t));
     }
 
     /// <summary>
@@ -342,6 +414,7 @@ public sealed class LineCrossingTracker : ILaneTracker
             }
             ch.Scheduled = true;
             ch.ScheduledHit = tHit;
+            _emitted.Add((ch.Kind, tHit, now));
             scheduled.Add(new ScheduledNote(
                 ch.Kind, null, tHit, maxDev, ch.Crossings.Count,
                 LineYs[0], ch.FirstTime));
