@@ -24,6 +24,10 @@ public sealed class SingleLineTracker : ILaneTracker
     /// <summary>走査ラインの Y（画面比率）。検出器の単ライン走査と共有する。</summary>
     public static double LineY { get; set; } = 0.665;
 
+    /// <summary>傾き参照ラインの Y（v0.3.77）。発火はせず、発火ラインとの
+    /// 横断間隔からそのノーツ自身の実効レートを測るためだけに使う。</summary>
+    public static double UpperLineY { get; set; } = 0.60;
+
     /// <summary>到着推定への系統補正 [秒]。v0.3.73 の発火を合意集合と
     /// 照合すると予測が中央値で約 9ms 早かったため、-0.003 から
     /// +0.006 へ移した (v0.3.75)。</summary>
@@ -33,12 +37,22 @@ public sealed class SingleLineTracker : ILaneTracker
     // 従来ラインの実測で固定した 1.70 をそのまま使う（v0.3.44）。
     private const double CrossingRate = 1.70;
     private const double RefractorySeconds = 0.05;
+    // 傾きペアの受理条件（v0.3.77）: 2 ラインの横断間隔が想定範囲にあり、
+    // 割り出したレートが実測の分布内にあるときだけ傾き発火にする。
+    // 範囲外は固定レートの単独発火へ落とす（機械式の縮退形）。
+    private const double MinPairDtSeconds = 0.30;
+    private const double MaxPairDtSeconds = 1.05;
+    private const double MinSlopeRate = 1.45;
+    private const double MaxSlopeRate = 1.95;
 
     private readonly double _judgmentW;
     private readonly double _vanishingY;
     private readonly LaneNoteTracker _arrowTracker;
-    private readonly bool[] _prevPresence = new bool[5];
-    private readonly double[] _lastCrossAt = new double[5];
+    // 在席は [ライン (0 = 参照, 1 = 発火), 色] で持つ。
+    private readonly bool[,] _prevPresence = new bool[2, 5];
+    private readonly double[,] _lastCrossAt = new double[2, 5];
+    // 色ごとの直近の参照ライン横断時刻（傾きペア用、未観測は NaN）。
+    private readonly double[] _upperCrossAt = new double[5];
     private double _lastFrameTime = double.NaN;
     private double _frameDelta = 1.0 / 31;
 
@@ -57,9 +71,16 @@ public sealed class SingleLineTracker : ILaneTracker
             spawnGateY: spawnGateY,
             scheduleHorizonSeconds: 1.2,
             commitWindowSeconds: commitWindowSeconds);
+        for (int li = 0; li < 2; li++)
+        {
+            for (int k = 0; k < 5; k++)
+            {
+                _lastCrossAt[li, k] = double.NegativeInfinity;
+            }
+        }
         for (int k = 0; k < 5; k++)
         {
-            _lastCrossAt[k] = double.NegativeInfinity;
+            _upperCrossAt[k] = double.NaN;
         }
     }
 
@@ -102,35 +123,79 @@ public sealed class SingleLineTracker : ILaneTracker
             timeSeconds,
             arrows.Count > 0 ? arrows : Array.Empty<NoteDetection>()));
 
-        // このラインの在席。紫は「未解決の重なり」として発火させない
+        // 両ラインの在席。紫は「未解決の重なり」として発火させない
         // （種別としては存在しない: マスター確認 + 全セッションログ
         // 実測で紫の発火は 13 / 約 17,500 件、初期の 3 ランのみ）。
-        var presence = new bool[5];
+        var presence = new bool[2, 5];
         foreach (NoteDetection d in laneDetections)
         {
             if (!d.IsLinePresence || d.Kind == NoteKind.Arrow || d.Kind == NoteKind.Purple)
             {
                 continue;
             }
-            if (Math.Abs(d.Y - LineY) < 0.01)
+            if (Math.Abs(d.Y - UpperLineY) < 0.01)
             {
-                presence[(int)d.Kind] = true;
+                presence[0, (int)d.Kind] = true;
+            }
+            else if (Math.Abs(d.Y - LineY) < 0.01)
+            {
+                presence[1, (int)d.Kind] = true;
             }
         }
         // 横断時刻は「不在→在席」の中点に置く（従来ラインと同じ約束）。
         double crossTime = timeSeconds - _frameDelta / 2;
+        // 参照ラインの横断は発火せず、傾きペアの片端として記録する。
         for (int k = 0; k < 5; k++)
         {
             if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
             {
                 continue;
             }
-            if (presence[k] && !_prevPresence[k]
-                && timeSeconds - _lastCrossAt[k] > RefractorySeconds)
+            if (presence[0, k] && !_prevPresence[0, k]
+                && timeSeconds - _lastCrossAt[0, k] > RefractorySeconds)
             {
-                _lastCrossAt[k] = timeSeconds;
+                _lastCrossAt[0, k] = timeSeconds;
+                _upperCrossAt[k] = crossTime;
+            }
+        }
+        // 発火ラインの横断で発火する。参照ラインとペアが組めれば、その
+        // ノーツ自身の実効レートで外挿する（2 観測・1 除算・1 クランプ
+        // だけの機械式）。組めなければ固定レートで発火する。
+        for (int k = 0; k < 5; k++)
+        {
+            if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
+            {
+                continue;
+            }
+            if (presence[1, k] && !_prevPresence[1, k]
+                && timeSeconds - _lastCrossAt[1, k] > RefractorySeconds)
+            {
+                _lastCrossAt[1, k] = timeSeconds;
+                double tHit;
+                int samples = 1;
+                double tA = _upperCrossAt[k];
+                double dt = crossTime - tA;
+                if (!double.IsNaN(tA) && dt >= MinPairDtSeconds && dt <= MaxPairDtSeconds)
+                {
+                    double rate = (W(UpperLineY) - W(LineY)) / dt;
+                    if (rate >= MinSlopeRate && rate <= MaxSlopeRate)
+                    {
+                        tHit = crossTime + (W(LineY) - _judgmentW) / rate
+                            + CorrectionSeconds;
+                        samples = 2;
+                    }
+                    else
+                    {
+                        tHit = crossTime + LeadFrom(LineY);
+                    }
+                }
+                else
+                {
+                    tHit = crossTime + LeadFrom(LineY);
+                }
+                _upperCrossAt[k] = double.NaN;
                 scheduled.Add(new ScheduledNote(
-                    (NoteKind)k, null, crossTime + LeadFrom(LineY), 0.0, 1,
+                    (NoteKind)k, null, tHit, 0.0, samples,
                     LineY, crossTime));
             }
         }

@@ -49,6 +49,10 @@ public sealed class FrameDetector
     public IReadOnlyList<Line1LaneState> LastLine1States { get; private set; }
         = Array.Empty<Line1LaneState>();
 
+    /// <summary>傾き参照ライン（UpperLineY）のレーン別状態（PL2 診断用、v0.3.77）。</summary>
+    public IReadOnlyList<Line1LaneState> LastLine2States { get; private set; }
+        = Array.Empty<Line1LaneState>();
+
     /// <summary>直近の Detect で見つけた矢印バンドの行範囲（フレーム px）。
     /// オーバレイ／watch 描画用（v0.3.59）。Detect のたびに差し替わる。</summary>
     public IReadOnlyList<(int TopPy, int BottomPy)> LastBands { get; private set; }
@@ -106,7 +110,11 @@ public sealed class FrameDetector
     {
         LaneGeometry geo = _profile.Geometry;
         int w = frame.ViewWidth, h = frame.ViewHeight;
-        double lineY = SingleLineTracker.LineY;
+        // 発火ライン (LineY) と傾き参照ライン (UpperLineY) の 2 本を走査する
+        // (v0.3.77)。走査と確定の規則は両ラインで同一で、参照ラインの
+        // 在席は「傾きを測るための横断」としてだけ使われる。
+        foreach (double lineY in new[] { SingleLineTracker.UpperLineY, SingleLineTracker.LineY })
+        {
         int pyC = (int)(lineY * h);
         var states = new Line1LaneState[_profile.LaneCount];
         for (int lane = 0; lane < _profile.LaneCount; lane++)
@@ -204,7 +212,15 @@ public sealed class FrameDetector
                 strictMask, dimMask, whiteCount, inWave,
                 strictCounts[(int)PixelColor.Purple]);
         }
-        LastLine1States = states;
+        if (lineY == SingleLineTracker.LineY)
+        {
+            LastLine1States = states;
+        }
+        else
+        {
+            LastLine2States = states;
+        }
+        }
     }
 
     /// <summary>

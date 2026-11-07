@@ -1071,7 +1071,10 @@ public class SingleLineTrackerTests
     private const double Van = 0.39;
 
     private static NoteDetection Presence(double t, NoteKind kind)
-        => new(0, kind, null, 0.4, SingleLineTracker.LineY, t, IsLinePresence: true);
+        => PresenceAt(t, kind, SingleLineTracker.LineY);
+
+    private static NoteDetection PresenceAt(double t, NoteKind kind, double y)
+        => new(0, kind, null, 0.4, y, t, IsLinePresence: true);
 
     private static SingleLineTracker NewTracker()
         => new(judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.1);
@@ -1127,6 +1130,30 @@ public class SingleLineTrackerTests
         var tracker = NewTracker();
         var got = tracker.Observe(1.0, new List<NoteDetection> { Presence(1.0, NoteKind.Purple) });
         Assert.Empty(got);
+    }
+
+    [Fact]
+    public void SlopePair_TwoCrossingsFitRate()
+    {
+        var tracker = NewTracker();
+        tracker.Observe(0.9833, Array.Empty<NoteDetection>());
+        // 参照ライン (0.60) の横断: crossTime = 1.0 - 1/120 = 0.9917。
+        // 参照ラインだけでは発火しない。
+        var up = tracker.Observe(1.0, new[]
+        {
+            PresenceAt(1.0, NoteKind.Red, SingleLineTracker.UpperLineY),
+        });
+        Assert.Empty(up);
+        tracker.Observe(1.0167, Array.Empty<NoteDetection>());
+        tracker.Observe(1.5833, Array.Empty<NoteDetection>());
+        // 発火ライン (0.665) の横断: crossTime = 1.5917。dt = 0.60 s、
+        // レート = (W(0.60) - W(0.665)) / 0.60 = 1.1255 / 0.60 = 1.8759。
+        // tHit = 1.5917 + (W(0.665) - 判断W) / 1.8759 + 補正 0.006 = 2.5686。
+        // 固定レートなら 2.6691 になるので区別できる。
+        var got = tracker.Observe(1.60, new[] { Presence(1.60, NoteKind.Red) });
+        ScheduledNote note = Assert.Single(got);
+        Assert.Equal(2, note.SampleCount);
+        Assert.InRange(note.THit, 2.5666, 2.5706);
     }
 
     [Fact]

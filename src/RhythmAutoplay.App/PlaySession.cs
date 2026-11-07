@@ -397,6 +397,7 @@ public sealed class PlaySession
         // 単ライン状態ログ（v0.3.73、診断用）: ビット配置は PL1 の
         // 書き出し箇所に記載（v0.3.74 で重なりを修正済み）。
         var prevLine1Mask = new int[_profile.LaneCount];
+        var prevLine2Mask = new int[_profile.LaneCount];
         // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
         // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
         // (レーン, 署名, 現在の到達時刻) → タグ。修正のたびに時刻を更新する。
@@ -567,6 +568,21 @@ public sealed class PlaySession
                     {
                         LogEvent($"PL1 t={now:F3} lane={lane} m={m:X4}");
                         prevLine1Mask[lane] = m;
+                    }
+                }
+                // 傾き参照ラインの状態（PL2、v0.3.77）。ビット配置は PL1 と同じ。
+                IReadOnlyList<Line1LaneState> states2 = detector.LastLine2States;
+                for (int lane = 0; lane < states2.Count && lane < prevLine2Mask.Length; lane++)
+                {
+                    Line1LaneState st = states2[lane];
+                    int m = st.StrictMask | (st.DimMask << 4)
+                        | (st.WhiteCount >= 2 ? 1 << 8 : 0)
+                        | (st.InWave ? 1 << 9 : 0)
+                        | (st.PurpleCount >= 2 ? 1 << 10 : 0);
+                    if (m != prevLine2Mask[lane])
+                    {
+                        LogEvent($"PL2 t={now:F3} lane={lane} m={m:X4}");
+                        prevLine2Mask[lane] = m;
                     }
                 }
             }
