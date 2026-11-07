@@ -19,8 +19,10 @@ public sealed class SingleLineTracker : ILaneTracker
     /// <summary>走査ラインの Y（画面比率）。検出器の単ライン走査と共有する。</summary>
     public static double LineY { get; set; } = 0.665;
 
-    /// <summary>到着推定への系統補正 [秒]。まずは従来ラインと同じ -0.003 から。</summary>
-    public static double CorrectionSeconds { get; set; } = -0.003;
+    /// <summary>到着推定への系統補正 [秒]。v0.3.73 の発火を合意集合と
+    /// 照合すると予測が中央値で約 9ms 早かったため、-0.003 から
+    /// +0.006 へ移した (v0.3.75)。</summary>
+    public static double CorrectionSeconds { get; set; } = 0.006;
 
     // 横断観測の実効レート。在席の立ち上がりという観測量に固有の値で、
     // 従来ラインの実測で固定した 1.70 をそのまま使う（v0.3.44）。
@@ -37,6 +39,13 @@ public sealed class SingleLineTracker : ILaneTracker
     // のと同じだけ待つ。締切を過ぎた予約は絶対に出さない（期限切れ
     // 発火がリザルト画面を飛ばした v0.3.73 の事故対策）。
     private const double ArrowDirectionMarginSeconds = 0.15;
+    // 方向を読む場所（マスター提案、v0.3.75）: 波の方向は検出ラインとは
+    // 別の場所で読む。下端がこの帯の中にある間の読みだけを採用し、
+    // 帯での最後の読みを正とする。高い位置の読みは上に偏ることが
+    // 実測されており (v0.3.73)、横断ラインの役割はタイミング専用に
+    // 徹する。発火は帯を抜けた時点（または締切）で行う。
+    private const double DirectionZoneTopY = 0.74;
+    private const double DirectionZoneBottomY = 0.88;
 
     private sealed class ArrowObs
     {
@@ -152,25 +161,29 @@ public sealed class SingleLineTracker : ILaneTracker
             {
                 var o = new ArrowObs
                 {
-                    Direction = d.Direction,
                     X = d.X,
                     LastY = d.Y,
                     LastT = t,
                     FirstY = d.Y,
                     FirstT = t,
                 };
+                if (InDirectionZone(d.Y) && d.Direction != null)
+                {
+                    o.Direction = d.Direction;
+                }
                 _arrows.Add(o);
                 if (d.Y >= LineY)
                 {
                     // 初見ですでにラインより下: 横断は観測できないため、
-                    // 初見位置からの到着予測で即発火する（機械式の縮退形）。
-                    FireArrow(o, t + LeadFrom(d.Y), scheduled);
+                    // 初見位置からの到着予測で保留に入る（機械式の縮退形）。
+                    PendArrow(o, t + LeadFrom(d.Y));
                 }
                 continue;
             }
             double prevY = match.LastY;
             double prevT = match.LastT;
-            if (d.Direction != null)
+            // 方向の読みは帯の中だけ採用し、新しい読みで置き換える。
+            if (InDirectionZone(d.Y) && d.Direction != null)
             {
                 match.Direction = d.Direction;
             }
@@ -181,9 +194,10 @@ public sealed class SingleLineTracker : ILaneTracker
                 && prevY < LineY && d.Y >= LineY && d.Y > prevY)
             {
                 // 下端がラインを横切る時刻を前後フレームで補間する。
+                // 発火はここでは行わず、方向の帯を抜けてからにする。
                 double frac = (LineY - prevY) / (d.Y - prevY);
                 double tCross = prevT + frac * (t - prevT);
-                FireArrow(match, tCross + LeadFrom(LineY), scheduled);
+                PendArrow(match, tCross + LeadFrom(LineY));
             }
         }
 
@@ -191,8 +205,11 @@ public sealed class SingleLineTracker : ILaneTracker
         for (int i = _arrows.Count - 1; i >= 0; i--)
         {
             ArrowObs o = _arrows[i];
-            if (o.Pending && o.Direction != null)
+            if (o.Pending && o.Direction != null
+                && (o.LastY > DirectionZoneBottomY
+                    || t > o.PendingTHit - ArrowDirectionMarginSeconds))
             {
+                // 帯を抜けた（または締切が来た）ので、帯での最後の読みで発火。
                 o.Pending = false;
                 o.Fired = true;
                 scheduled.Add(new ScheduledNote(
@@ -222,20 +239,14 @@ public sealed class SingleLineTracker : ILaneTracker
         }
     }
 
-    private void FireArrow(ArrowObs o, double tHit, List<ScheduledNote> scheduled)
+    private static bool InDirectionZone(double y)
+        => y >= DirectionZoneTopY && y <= DirectionZoneBottomY;
+
+    private void PendArrow(ArrowObs o, double tHit)
     {
-        if (o.Direction != null)
-        {
-            o.Fired = true;
-            scheduled.Add(new ScheduledNote(
-                NoteKind.Arrow, o.Direction, tHit, 0.0, 1, LineY, o.FirstT));
-        }
-        else
-        {
-            // 方向が読めるまで保留にし、降下中の読み直しを受け付ける。
-            o.Pending = true;
-            o.PendingTHit = tHit;
-        }
+        // 横断で到達時刻だけを確定し、発火は方向の帯を抜けてから行う。
+        o.Pending = true;
+        o.PendingTHit = tHit;
     }
 
     public List<ExpiredTrack> DrainExpired()

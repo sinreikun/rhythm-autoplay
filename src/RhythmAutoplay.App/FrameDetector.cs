@@ -175,21 +175,30 @@ public sealed class FrameDetector
                     dimMask |= 1 << (int)ToKind(pc);
                 }
             }
-            // パターンの確定: 証拠（同色 2 標本以上）のある色ファミリーは
-            // 全部、そのレーンの在席として出す（v0.3.74）。初版は最有力の
-            // 1 色だけを出していたが、標本の中にある色が候補から落ち、
-            // 特に黄が大量に消えた（初回実走のマスター目視 + PL1 実測）。
-            // 1 レーンに同時に立つ色は標本の行・列の違いで複数あり得る
-            // ため、勝者総取りにせず色ごとに独立に数える。白・波の
-            // 重なりは確定を変えない（キーは原子色に共通化される）。
+            // パターンの確定: 証拠の最も多い色ファミリーを、そのレーンの
+            // 原子色として 1 件だけ在席にする（勝者総取り）。v0.3.74 で
+            // 「証拠のある色を全部独立に出す」方式を試したが、合意集合
+            // との照合でゴミ発火が約 300 件に爆発し、カバー率も落ちた
+            // （在席が他色に切られず伸びて隣のノーツと融合する／波の
+            // 緩い読みが誤った時刻に在席を立てる）。勝者総取りには
+            // エピソードを区切る働きがあり、v0.3.73 の実測が最良だった
+            // ため差し戻した。白・波の重なりは確定を変えない（キーは
+            // 原子色に共通化されるため）。
+            PixelColor best = PixelColor.None;
+            int bestCount = 1; // 在席には同色 2 標本以上の証拠を要求する
             foreach (PixelColor pc in new[] { PixelColor.Red, PixelColor.Blue, PixelColor.Yellow })
             {
-                if (strictCounts[(int)pc] >= 2)
+                if (strictCounts[(int)pc] > bestCount)
                 {
-                    results.Add(new NoteDetection(
-                        lane, ToKind(pc), null, cx, lineY, frame.TimeSeconds,
-                        IsLinePresence: true));
+                    bestCount = strictCounts[(int)pc];
+                    best = pc;
                 }
+            }
+            if (best != PixelColor.None)
+            {
+                results.Add(new NoteDetection(
+                    lane, ToKind(best), null, cx, lineY, frame.TimeSeconds,
+                    IsLinePresence: true));
             }
             states[lane] = new Line1LaneState(
                 strictMask, dimMask, whiteCount, inWave,
