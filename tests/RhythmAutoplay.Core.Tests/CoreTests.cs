@@ -932,8 +932,10 @@ public class LineCrossingTrackerTests
     [Fact]
     public void Rescue_SuppressedWhenScheduleNearby()
     {
-        // 裏付けのある救済候補でも、推定到達の ±100ms 以内に同種の
-        // 予約が既にあれば発火しない (先行ノーツの残響対策)。
+        // 裏付けのある救済候補でも、推定到達の ±55ms 以内に同種の
+        // 予約が既にあれば発火しない (先行ノーツの残響対策、v0.3.57 で
+        // ±100ms から縮小)。先行ノーツは 3 横断で完走させて鎖を消し、
+        // 抑制が接続吸収ではなく排出記録へのゲートで効く形にする。
         var tracker = new LineCrossingTracker(
             judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
         var got = new List<ScheduledNote>();
@@ -941,10 +943,31 @@ public class LineCrossingTrackerTests
         {
             double t = 0.90 + i / 60.0;
             got.AddRange(tracker.Observe(t, WindowPresence(t,
-                (0, 1.000, 1.030), (1, 1.135, 1.165),   // 正常な先行ノーツ
-                (0, 1.128, 1.158), (2, 1.335, 1.365)))); // 遅れた断片 + 最終ライン
+                (0, 1.000, 1.030), (1, 1.135, 1.165), (2, 1.245, 1.275), // 完走する先行ノーツ (到達 ≈1.360)
+                (0, 1.078, 1.108), (2, 1.295, 1.325))));                 // 断片 + 最終ライン (救済推定 ≈1.398、差 38ms)
         }
         Assert.Single(got);
+    }
+
+    [Fact]
+    public void TwoRescues_OneStepApart_BothFire()
+    {
+        // v0.3.57: 16 分音符間隔 (約 83ms) で並ぶ 2 つの救済候補が
+        // 両方とも発火する。不応期 90ms 時代は 2 つ目が構造的に
+        // 塞がれていた。裏付けに使った鎖は消費されるため、1 つ目の
+        // 断片が 2 つ目の最終ライン横断を吸収することもない。
+        var tracker = new LineCrossingTracker(
+            judgmentY: 0.941, vanishingY: Van, spawnGateY: 0.88, commitWindowSeconds: 0.10);
+        var got = new List<ScheduledNote>();
+        for (int i = 0; i <= 40; i++)
+        {
+            double t = 0.90 + i / 60.0;
+            got.AddRange(tracker.Observe(t, WindowPresence(t,
+                (0, 1.045, 1.075), (2, 1.258, 1.288),   // 救済 1 (到達推定 ≈1.364)
+                (0, 1.128, 1.158), (2, 1.335, 1.365)))); // 救済 2 (到達推定 ≈1.448)
+        }
+        Assert.Equal(2, got.Count);
+        Assert.All(got, n => Assert.Equal(LineCrossingTracker.LineYs[2], n.FirstY));
     }
 }
 

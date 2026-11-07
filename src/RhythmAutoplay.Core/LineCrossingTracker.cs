@@ -42,12 +42,17 @@ public sealed class LineCrossingTracker : ILaneTracker
     // かったノーツが、最終ライン (0.89) を横切る瞬間にだけ拾う終端
     // トリガ。v0.3.47 の「4 本目の鎖ライン」とは別物で、鎖には一切
     // 入れない。発火条件は (a) 未予約の鎖の到達推定と 60ms 以内で
-    // 一致する（裏付け）、(b) 同種の予約が推定到達の ±100ms 以内に
-    // 無い、(c) 同種の救済から 90ms 以上空いている、の 3 つ全て。
+    // 一致する（裏付け）、(b) 同種の予約が推定到達の ±55ms 以内に
+    // 無い、(c) 同種の救済から 40ms 以上空いている、の 3 つ全て。
     // 判定文字の漂流は上流の裏付けを持たないため、ここでは発火しない。
+    // v0.3.57: ゲート (b)(c) を緩めた。在席ログ (v0.3.56) の実測では
+    // 取りこぼしの最大区分が「断片も最終ラインも見えたのに無予約」で、
+    // 16 分音符の間隔 (BPM195 で 77ms) より長い不応期 90ms と ±100ms の
+    // 抑制窓が、密な区間で救済同士・正規予約との近接を構造的に塞いで
+    // いた。二重発射の最終防衛はセッション側の重複抑制 (35ms) が担う。
     private const double RescueAgreeSeconds = 0.06;
-    private const double RescueSuppressSeconds = 0.10;
-    private const double RescueRefractorySeconds = 0.09;
+    private const double RescueSuppressSeconds = 0.055;
+    private const double RescueRefractorySeconds = 0.04;
     private const double RescueResidual = 0.030;
     // 救済推定の系統偏り補正は REFUTED（v0.3.54 で実験し v0.3.55 で撤回）:
     // 救済の到達推定は実測で中央値 -7ms (Floating) / -10ms (GOODBOUNCE)
@@ -359,8 +364,17 @@ public sealed class LineCrossingTracker : ILaneTracker
         {
             return;
         }
-        corroborator.Scheduled = true;
-        corroborator.ScheduledHit = rescueEst;
+        // 裏付けに使った鎖はその場で消費する（v0.3.57）。予約済みのまま
+        // 生かしておくと、接続許容が広い (70ms) 予約済み鎖として次の
+        // ノーツの最終ライン横断を吸収してしまい、後続の救済が成立
+        // しなくなる。在席ログの実測で見つけた構造的な競合。
+        _chains.Remove(corroborator);
+        double cFirstY = _vanishingY + 1.0 / corroborator.Crossings[0].W;
+        double cLastY = _vanishingY + 1.0 / corroborator.Crossings[^1].W;
+        _expired.Add(new ExpiredTrack(
+            corroborator.Kind, true, corroborator.Crossings.Count,
+            cFirstY, cLastY,
+            corroborator.FirstTime, corroborator.Crossings[^1].T, 0, ""));
         _lastRescueAt[(int)kind] = t;
         _emitted.Add((kind, rescueEst, t));
         scheduled.Add(new ScheduledNote(
