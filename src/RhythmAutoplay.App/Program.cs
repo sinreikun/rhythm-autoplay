@@ -30,6 +30,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     // （値つき引数のループは末尾要素を見ないため、v0.3.39 では末尾指定が無効だった）。
     bool logSamplesFlag = args.Contains("--log-samples", StringComparer.OrdinalIgnoreCase);
     bool logPresenceFlag = args.Contains("--log-presence", StringComparer.OrdinalIgnoreCase);
+    bool logLineSamplesFlag = args.Contains("--log-line-samples", StringComparer.OrdinalIgnoreCase);
     bool watchFlag = args.Contains("--watch", StringComparer.OrdinalIgnoreCase);
     bool printWindowFlag = args.Contains("--print-window", StringComparer.OrdinalIgnoreCase);
     bool upperLinesFlag = args.Contains("--upper-lines", StringComparer.OrdinalIgnoreCase);
@@ -69,7 +70,7 @@ if (args.Length > 0 && args[0].Equals("play", StringComparison.OrdinalIgnoreCase
     }
     var playSession = new PlaySession(
         GameProfile.HypnosyncDefault(),
-        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, LogPresence = logPresenceFlag, Watch = watchFlag, PrintWindowCapture = printWindowFlag, UpperLines = upperLinesFlag, DenseLines = denseLinesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
+        new PlayOptions { DryRun = dryRun, OffsetMilliseconds = offsetMs, InjectStrayMilliseconds = strayMs, CommitWindowMilliseconds = commitMs, HoldMilliseconds = holdMs, LogSamples = logSamplesFlag, LogPresence = logPresenceFlag, LogLineSamples = logLineSamplesFlag, Watch = watchFlag, PrintWindowCapture = printWindowFlag, UpperLines = upperLinesFlag, DenseLines = denseLinesFlag, DurationSeconds = seconds, EventLogDirectory = GuiSettings.EventLogDirectory, Engine = engine });
     return playSession.Run();
 }
 

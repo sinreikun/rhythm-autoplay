@@ -53,6 +53,16 @@ public sealed class FrameDetector
     public IReadOnlyList<Line1LaneState> LastLine2States { get; private set; }
         = Array.Empty<Line1LaneState>();
 
+    /// <summary>PLR 較正用: 発火ライン走査の標本 HSV を記録するか（v0.3.80）。</summary>
+    public bool CaptureLineSamples { get; set; }
+
+    /// <summary>直近の Detect の発火ライン標本 HSV [レーン, 標本 9, H/S/V]。
+    /// 標本の順序は行（-2px, 0, +2px）×列（中央, -30%, +30%）。</summary>
+    public double[,,] LastLineSamples { get; private set; } = new double[0, 0, 0];
+
+    /// <summary>直近の Detect の発火ライン標本が波の帯内だったか（レーン別）。</summary>
+    public bool[] LastLineSampleWave { get; private set; } = Array.Empty<bool>();
+
     /// <summary>直近の Detect で見つけた矢印バンドの行範囲（フレーム px）。
     /// オーバレイ／watch 描画用（v0.3.59）。Detect のたびに差し替わる。</summary>
     public IReadOnlyList<(int TopPy, int BottomPy)> LastBands { get; private set; }
@@ -117,6 +127,10 @@ public sealed class FrameDetector
         {
         int pyC = (int)(lineY * h);
         var states = new Line1LaneState[_profile.LaneCount];
+        double[,,] samples = CaptureLineSamples && lineY == SingleLineTracker.LineY
+            ? new double[_profile.LaneCount, 9, 3]
+            : null;
+        bool[] sampleWave = samples != null ? new bool[_profile.LaneCount] : null;
         for (int lane = 0; lane < _profile.LaneCount; lane++)
         {
             double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
@@ -126,7 +140,8 @@ public sealed class FrameDetector
             int whiteCount = 0;
             bool inWave = false;
             int step = V(2);
-            for (int dpy = -step; dpy <= step; dpy += step)
+            int rowIdx = 0;
+            for (int dpy = -step; dpy <= step; dpy += step, rowIdx++)
             {
                 int py = Math.Clamp(pyC + dpy, 0, h - 1);
                 bool inBand = false;
@@ -142,10 +157,20 @@ public sealed class FrameDetector
                 {
                     inWave = true;
                 }
+                int colIdx = 0;
                 foreach (double off in new[] { 0.0, -halfSpread, halfSpread })
                 {
                     int px = Math.Clamp((int)(cx * w + off), 0, w - 1);
                     var (r, g, b) = frame.ViewPixelAt(px, py);
+                    if (samples != null)
+                    {
+                        var (hh, ssv, vvv) = ColorClassifier.RgbToHsv(r, g, b);
+                        int si = rowIdx * 3 + colIdx;
+                        samples[lane, si, 0] = hh;
+                        samples[lane, si, 1] = ssv;
+                        samples[lane, si, 2] = vvv;
+                    }
+                    colIdx++;
                     PixelColor c = ColorClassifier.Classify(r, g, b);
                     if (c == PixelColor.None && inBand)
                     {
@@ -211,10 +236,19 @@ public sealed class FrameDetector
             states[lane] = new Line1LaneState(
                 strictMask, dimMask, whiteCount, inWave,
                 strictCounts[(int)PixelColor.Purple]);
+            if (sampleWave != null)
+            {
+                sampleWave[lane] = inWave;
+            }
         }
         if (lineY == SingleLineTracker.LineY)
         {
             LastLine1States = states;
+            if (samples != null)
+            {
+                LastLineSamples = samples;
+                LastLineSampleWave = sampleWave;
+            }
         }
         else
         {

@@ -44,6 +44,8 @@ public sealed class PlayOptions
     /// 事後に切り分けられなかったための計装。挙動は変えない。
     /// </summary>
     public bool LogPresence { get; init; }
+    /// <summary>単ライン標本の HSV 生ログ（PLR）を出す較正用フラグ（v0.3.80）。</summary>
+    public bool LogLineSamples { get; init; }
     /// <summary>
     /// 検出オーバレイ保存（v0.3.59）: 逃しやすい状況（矢印バンド重なり /
     /// 高密度 / 未予約のまま失効 / 最終ライン救済）が起きた瞬間のフレームに
@@ -163,6 +165,7 @@ public sealed class PlaySession
         bool useLine1 = string.Equals(_options.Engine, "line1", StringComparison.OrdinalIgnoreCase);
         detector.LineMode = useLine || useHybrid;
         detector.SingleLineMode = useLine1;
+        detector.CaptureLineSamples = _options.LogLineSamples;
         if (_options.DenseLines)
         {
             LineCrossingTracker.LineYs = LineCrossingTracker.DenseLineYs;
@@ -398,6 +401,7 @@ public sealed class PlaySession
         // 書き出し箇所に記載（v0.3.74 で重なりを修正済み）。
         var prevLine1Mask = new int[_profile.LaneCount];
         var prevLine2Mask = new int[_profile.LaneCount];
+        int plrFrame = 0;
         // 予約の事後修正（v0.3.37）: 受け付けた予約にタグを付け、追跡器から
         // 修正が来たらスケジューラ内の未発火イベントをずらす。対応表は
         // (レーン, 署名, 現在の到達時刻) → タグ。修正のたびに時刻を更新する。
@@ -584,6 +588,41 @@ public sealed class PlaySession
                         LogEvent($"PL2 t={now:F3} lane={lane} m={m:X4}");
                         prevLine2Mask[lane] = m;
                     }
+                }
+            }
+            if (_options.LogLineSamples && useLine1)
+            {
+                // PLR 較正ログ（v0.3.80）: 発火ラインの標本 HSV をそのまま出す。
+                // 標本順は行（-2px, 0, +2px）×列（中央, -30%, +30%）で、
+                // 各標本は H(×35) S(×20) V(×20) の各 2 桁。末尾 W は波の帯内。
+                // 色らしい標本のあるレーンだけ出すが、30 フレームに 1 回は
+                // 背景の基準として全レーン出す。
+                plrFrame++;
+                double[,,] smp = detector.LastLineSamples;
+                bool[] wv = detector.LastLineSampleWave;
+                for (int lane = 0; lane < smp.GetLength(0); lane++)
+                {
+                    bool any = plrFrame % 30 == 0;
+                    for (int si = 0; si < 9 && !any; si++)
+                    {
+                        if (smp[lane, si, 1] >= 0.08 || smp[lane, si, 2] >= 0.12)
+                        {
+                            any = true;
+                        }
+                    }
+                    if (!any)
+                    {
+                        continue;
+                    }
+                    var sb = new System.Text.StringBuilder();
+                    for (int si = 0; si < 9; si++)
+                    {
+                        sb.Append($"{(int)Math.Round(smp[lane, si, 0] * 35):D2}");
+                        sb.Append($"{(int)Math.Round(smp[lane, si, 1] * 20):D2}");
+                        sb.Append($"{(int)Math.Round(smp[lane, si, 2] * 20):D2}");
+                    }
+                    sb.Append(wv != null && lane < wv.Length && wv[lane] ? 'W' : '-');
+                    LogEvent($"PLR t={now:F3} lane={lane} d={sb}");
                 }
             }
             viewUpcoming.RemoveAll(u => now > u.THit + 0.3);
