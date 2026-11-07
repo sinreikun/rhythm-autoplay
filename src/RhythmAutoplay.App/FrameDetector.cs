@@ -80,10 +80,18 @@ public sealed class FrameDetector
                     // 落ち、横断の鎖が切れていた（Floating の CRINGE 44 の
                     // 主因候補、マスター実機観察 2026-11-07）。レーンパスの
                     // ClassifyRow と同じ規則にそろえる。
+                    // v0.3.58: バンド判定に上下マージンを足す。bands は
+                    // 「幅 1.5 レーン超の印 run があった行」だけで作るため、
+                    // 波の先端・後端の細い行や、印が途切れた行は帯の外に
+                    // なる。そこに重なったノーツは白板の上にいるのに通常
+                    // 分類で落ち、ライン在席が消えていた（GOODBOUNCE の
+                    // 盲目分の 81% が矢印 ±250ms 以内に集中、在席ログ実測）。
+                    // マージン 0.04*h はライン付近の移動量で約 ±100ms 分。
+                    int bandMargin = (int)(0.04 * h);
                     bool inBand = false;
                     foreach ((int top, int bottom) in bands)
                     {
-                        if (py >= top && py <= bottom)
+                        if (py >= top - bandMargin && py <= bottom + bandMargin)
                         {
                             inBand = true;
                             break;
