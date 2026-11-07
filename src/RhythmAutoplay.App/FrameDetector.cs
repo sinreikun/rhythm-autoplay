@@ -16,16 +16,20 @@ public sealed class FrameDetector
     private const double WideFactor = 1.7;
 
     // 画素絶対の定数はすべて基準解像度 1280x720 で較正されている。
-    // 実際のフレーム寸法との比で読み替えることで、プリセットが画面
-    // サイズに追従する（v0.3.69、マスター指摘: 遊ぶ人が好きに変える）。
-    // 将来はプロファイル側に基準解像度を持たせる。
+    // v0.3.69 でフレーム寸法比の読み替え（プリセットの画面追従）を入れたが、
+    // FS 実走で矢印検出が半減し（306 -> 158）、黄の在席も膨らんだ。
+    // 対照実験（v0.3.68 バイナリ、同じ FS・同日）で矢印 325 と無事だった
+    // ため、距離量のスケールは字形・標本格子に紐づく絶対量と結論し、
+    // v0.3.72 で全廃した。画面追従は分数ジオメトリとコンテンツ矩形
+    // （v0.3.71）が担う。将来プロファイル側に基準解像度を持たせる場合も、
+    // この実測を踏まえること。
     private const double BaseFrameWidth = 1280.0;
     private const double BaseFrameHeight = 720.0;
-    private double _sx = 1.0; // 横方向の倍率（行内カウント用）
-    private double _sy = 1.0; // 縦方向の倍率（行間・高さ用）
+    private double _sx = 1.0; // 未使用（将来のプロファイル基準解像度用に残置）
+    private double _sy = 1.0; // 未使用（同上）
 
-    /// <summary>縦の画素量を現在のフレーム高へ読み替える。</summary>
-    private int V(double pxAtBase) => Math.Max(1, (int)Math.Round(pxAtBase * _sy));
+    /// <summary>縦の画素量。解像度では読み替えない（v0.3.72、上記参照）。</summary>
+    private int V(double pxAtBase) => Math.Max(1, (int)Math.Round(pxAtBase));
 
     private readonly GameProfile _profile;
 
