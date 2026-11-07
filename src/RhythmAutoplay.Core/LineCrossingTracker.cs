@@ -39,7 +39,16 @@ public sealed class LineCrossingTracker : ILaneTracker
     // 8.0ms / 61% を大きく上回った）。スクロール速度は曲によらず一定
     // （実測済み）なので、レートを全ノーツ共通の定数として固定できる。
     private const double CrossingRate = 1.70;
-    private const double HitCorrectionSeconds = -0.003;
+    /// <summary>到達推定への系統補正 [秒]。上部ラインでは実測の偏りが変わるため可変にする。</summary>
+    public static double HitCorrectionSeconds { get; set; } = -0.003;
+    /// <summary>
+    /// 鎖ごとの傾きフィット（v0.3.67、上部ライン専用）: 横断間隔が広い
+    /// 配置では、鎖自身の横断から実効レートを最小二乗で求めて外挿する。
+    /// 従来の狭い間隔では固定レートが自由フィットに勝った（v0.3.44 実測）が、
+    /// 上部ラインは外挿距離が約 8 倍あり、ノーツごとのレートずれがそのまま
+    /// 増幅されるため、条件が逆転する。傾きが健全域を外れたら固定レートへ。
+    /// </summary>
+    public static bool UseSlopeFit { get; set; }
     private const double AttachToleranceSeconds = 0.035;
     /// <summary>推定ばらつきの許容 [秒]。上部ラインでは横断間隔が広がり誤差が増えるため可変にする。</summary>
     public static double MaxEstimateDeviationSeconds { get; set; } = 0.018;
@@ -398,13 +407,43 @@ public sealed class LineCrossingTracker : ILaneTracker
     /// 鎖の推定はそれらの平均。ばらつき（最大偏差）が小さいほど観測が
     /// 一貫している。自由フィットと違い、短い基線でも誤差が増幅されない。
     /// </summary>
+    /// <summary>この鎖の実効レート。傾きフィット有効時は横断の最小二乗傾き（健全域内のみ）、それ以外は固定レート。</summary>
+    private double EffectiveRate(Chain ch)
+    {
+        if (!UseSlopeFit || ch.Crossings.Count < 2)
+        {
+            return CrossingRate;
+        }
+        double tMean = 0, wMean = 0;
+        foreach ((double t, double w) in ch.Crossings)
+        {
+            tMean += t;
+            wMean += w;
+        }
+        tMean /= ch.Crossings.Count;
+        wMean /= ch.Crossings.Count;
+        double num = 0, den = 0;
+        foreach ((double t, double w) in ch.Crossings)
+        {
+            num += (t - tMean) * (w - wMean);
+            den += (t - tMean) * (t - tMean);
+        }
+        if (den < 1e-9)
+        {
+            return CrossingRate;
+        }
+        double rate = -num / den;
+        return rate is >= 1.45 and <= 1.95 ? rate : CrossingRate;
+    }
+
     private double EstimateHit(Chain ch, out double maxDeviation)
     {
+        double rate = EffectiveRate(ch);
         double sum = 0;
         var estimates = new List<double>(ch.Crossings.Count);
         foreach ((double t, double w) in ch.Crossings)
         {
-            double est = t + (w - _judgmentW) / CrossingRate;
+            double est = t + (w - _judgmentW) / rate;
             estimates.Add(est);
             sum += est;
         }
@@ -420,7 +459,7 @@ public sealed class LineCrossingTracker : ILaneTracker
     private double PredictCrossing(Chain ch, double w)
     {
         double tHit = EstimateHit(ch, out _);
-        return tHit - (w - _judgmentW) / CrossingRate;
+        return tHit - (w - _judgmentW) / EffectiveRate(ch);
     }
 
     private void TrySchedule(Chain ch, double now, List<ScheduledNote> scheduled, bool isRevision)

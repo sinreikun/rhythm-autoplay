@@ -163,7 +163,9 @@ public sealed class PlaySession
             LineCrossingTracker.LineYs = LineCrossingTracker.UpperLineYs;
             LineCrossingTracker.ChainTimeoutSeconds = 0.55;
             LineCrossingTracker.MaxEstimateDeviationSeconds = 0.030;
-            Log("上部ライン モード: 走査ライン 0.63/0.665/0.70（検出範囲と発火ラインの分離）");
+            LineCrossingTracker.UseSlopeFit = true;
+            LineCrossingTracker.HitCorrectionSeconds = 0.003;
+            Log("上部ライン モード: 走査ライン 0.63/0.665/0.70（検出範囲と発火ラインの分離）+ 傾きフィット");
         }
         for (int lane = 0; lane < trackers.Length; lane++)
         {
