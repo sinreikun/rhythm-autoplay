@@ -34,7 +34,8 @@ public sealed class GeometryOverride
 
 /// <summary>
 /// GUI の設定。ウィンドウ位置・タイミングオフセット・選択中プロファイル・
-/// プロファイルごとの形状上書きを %LOCALAPPDATA%\RhythmAutoplay\gui-settings.json に保存する。
+/// プロファイルごとの形状上書き・検出エンジン・オフセットを
+/// %LOCALAPPDATA%\RhythmAutoplay\gui-settings.json に保存する。
 /// </summary>
 public sealed class GuiSettings
 {
@@ -45,6 +46,18 @@ public sealed class GuiSettings
     public bool AlwaysOnTop { get; set; } = true;
     public bool ShowOverlay { get; set; } = true;
     public Dictionary<string, GeometryOverride> GeometryOverrides { get; set; } = new();
+    public Dictionary<string, string> EngineByProfile { get; set; } = new();
+    public Dictionary<string, double> OffsetByProfile { get; set; } = new();
+
+    /// <summary>プロファイルの検出エンジン（未設定なら既定の line1）。</summary>
+    public string EngineFor(string profileId) =>
+        EngineByProfile.TryGetValue(profileId, out string? engine) && !string.IsNullOrWhiteSpace(engine)
+            ? engine
+            : "line1";
+
+    /// <summary>プロファイルのタイミングオフセット [ms]（未設定なら全体の値）。</summary>
+    public double OffsetFor(string profileId) =>
+        OffsetByProfile.TryGetValue(profileId, out double ms) ? ms : OffsetMilliseconds;
 
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

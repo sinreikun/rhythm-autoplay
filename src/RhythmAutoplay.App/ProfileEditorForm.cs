@@ -229,7 +229,7 @@ public sealed class ProfileEditorForm : Form
     }
 
     private void AddNumRow(GroupBox group, string caption, NumericUpDown num, double min, double max,
-        double step, double value, int x, int y, int decimals = 3)
+        double step, double value, int x, int y, int decimals = 4)
     {
         group.Controls.Add(new Label { Text = caption, Location = new Point(x, y + 3), AutoSize = true });
         ConfigureNum(num, min, max, decimals, step, value);

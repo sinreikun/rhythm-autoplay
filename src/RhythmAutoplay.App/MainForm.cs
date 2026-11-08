@@ -21,6 +21,18 @@ public sealed class MainForm : Form
     private bool _suppressProfileEvent;
     private readonly TrackBar _offsetBar = new();
     private readonly NumericUpDown _offsetNum = new();
+    private readonly ComboBox _engineBox = new();
+    private bool _suppressEngineEvent;
+
+    /// <summary>GUI で選べる検出エンジン（値と表示名）。PlaySession の解釈と同じ文字列を使う。</summary>
+    private static readonly (string Value, string Label)[] EngineChoices =
+    {
+        ("line1", "line1（単ライン機械式）"),
+        ("hybrid", "hybrid（ライン＋軌跡の穴埋め）"),
+        ("line", "line（固定ライン横断）"),
+        ("track", "track（軌跡追跡）"),
+        ("band", "band（帯域トリガー）"),
+    };
     private readonly Button _playButton = new();
     private readonly Button _dryButton = new();
     private readonly Button _stopButton = new();
@@ -74,8 +86,8 @@ public sealed class MainForm : Form
     private void BuildUi()
     {
         Text = "RhythmAutoplay";
-        ClientSize = new Size(356, 486);
-        MinimumSize = new Size(340, 460);
+        ClientSize = new Size(356, 534);
+        MinimumSize = new Size(340, 508);
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.Manual;
 
@@ -113,6 +125,19 @@ public sealed class MainForm : Form
         _offsetNum.ValueChanged += OnOffsetNumChanged;
         Controls.Add(_offsetNum);
         y += 42;
+
+        Controls.Add(new Label { Text = "検出エンジン", Location = new Point(10, y), AutoSize = true });
+        y += 22;
+        _engineBox.Location = new Point(10, y);
+        _engineBox.Size = new Size(336, 28);
+        _engineBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        foreach (var choice in EngineChoices)
+        {
+            _engineBox.Items.Add(choice.Label);
+        }
+        _engineBox.SelectedIndexChanged += OnEngineChanged;
+        Controls.Add(_engineBox);
+        y += 40;
 
         _playButton.Text = "▶ プレイ開始";
         _playButton.Location = new Point(10, y);
@@ -187,7 +212,7 @@ public sealed class MainForm : Form
         y += 40;
 
         _logBox.Location = new Point(10, y);
-        _logBox.Size = new Size(336, 486 - y - 10);
+        _logBox.Size = new Size(336, 534 - y - 10);
         _logBox.Multiline = true;
         _logBox.ReadOnly = true;
         _logBox.ScrollBars = ScrollBars.Vertical;
@@ -212,12 +237,49 @@ public sealed class MainForm : Form
 
     private void ApplySettingsToControls()
     {
-        double offset = _settings.OffsetMilliseconds;
-        _offsetNum.Value = (decimal)Math.Max(-500, Math.Min(500, offset));
-        _offsetBar.Value = (int)Math.Max(-200, Math.Min(200, offset));
+        RefreshProfileControls();
         _overlayCheck.Checked = _settings.ShowOverlay;
         _topmostCheck.Checked = _settings.AlwaysOnTop;
         TopMost = _settings.AlwaysOnTop;
+    }
+
+    /// <summary>選択中プロファイルに効いているオフセットとエンジンを操作欄へ反映する。</summary>
+    private void RefreshProfileControls()
+    {
+        double offset = _settings.OffsetFor(_baseProfile.GameId);
+        _offsetNum.Value = (decimal)Math.Max(-500, Math.Min(500, offset));
+        _offsetBar.Value = (int)Math.Max(-200, Math.Min(200, offset));
+        _suppressEngineEvent = true;
+        _engineBox.SelectedIndex = EngineIndexOf(_settings.EngineFor(_baseProfile.GameId));
+        _suppressEngineEvent = false;
+    }
+
+    private static int EngineIndexOf(string engine)
+    {
+        for (int i = 0; i < EngineChoices.Length; i++)
+        {
+            if (string.Equals(EngineChoices[i].Value, engine, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private void OnEngineChanged(object? sender, EventArgs e)
+    {
+        if (_suppressEngineEvent || _engineBox.SelectedIndex < 0)
+        {
+            return;
+        }
+        string engine = EngineChoices[_engineBox.SelectedIndex].Value;
+        if (string.Equals(_settings.EngineFor(_baseProfile.GameId), engine, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        _settings.EngineByProfile[_baseProfile.GameId] = engine;
+        SaveSettingsSoon();
+        AppendLog($"検出エンジン: {engine}（次回開始から反映）");
     }
 
     private void OnProfileChanged(object? sender, EventArgs e)
@@ -236,6 +298,7 @@ public sealed class MainForm : Form
         _gameHwnd = IntPtr.Zero;
         SaveSettingsSoon();
         _overlay.Invalidate();
+        RefreshProfileControls();
         AppendLog($"プロファイル: {selected.GameId}（プロセス {selected.WindowProcessName}.exe）");
     }
 
@@ -254,6 +317,13 @@ public sealed class MainForm : Form
         {
             _settings.GeometryOverrides.Remove(savedId);
         }
+        // 削除されたプロファイルの GUI 側設定は残さない。
+        if (dialog.DeletedId is string deletedId)
+        {
+            _settings.GeometryOverrides.Remove(deletedId);
+            _settings.EngineByProfile.Remove(deletedId);
+            _settings.OffsetByProfile.Remove(deletedId);
+        }
         string preferId = dialog.SavedId ?? _baseProfile.GameId;
         _profiles = ProfileCatalog.LoadAll(msg => AppendLog(msg));
         _baseProfile = _profiles.FirstOrDefault(p => p.GameId == preferId) ?? _profiles[0];
@@ -267,6 +337,7 @@ public sealed class MainForm : Form
         _profileBox.SelectedItem = _baseProfile;
         _suppressProfileEvent = false;
         _overlay.Invalidate();
+        RefreshProfileControls();
         AppendLog(dialog.SavedId is not null
             ? $"プロファイル「{dialog.SavedId}」を保存しました。"
             : "プロファイル一覧を更新しました。");
@@ -290,11 +361,15 @@ public sealed class MainForm : Form
 
     private void SaveOffset(double ms)
     {
-        if (Math.Abs(_settings.OffsetMilliseconds - ms) < 0.001)
+        bool changed = Math.Abs(_settings.OffsetFor(_baseProfile.GameId) - ms) >= 0.001
+            || Math.Abs(_settings.OffsetMilliseconds - ms) >= 0.001;
+        // プロファイル別に保存しつつ、全体の値も最新に保つ（未設定プロファイルの初期値になる）。
+        _settings.OffsetByProfile[_baseProfile.GameId] = ms;
+        _settings.OffsetMilliseconds = ms;
+        if (!changed)
         {
             return;
         }
-        _settings.OffsetMilliseconds = ms;
         SaveSettingsSoon();
         if (_session is not null)
         {
@@ -311,7 +386,8 @@ public sealed class MainForm : Form
         var options = new PlayOptions
         {
             DryRun = dryRun,
-            OffsetMilliseconds = _settings.OffsetMilliseconds,
+            Engine = _settings.EngineFor(_baseProfile.GameId),
+            OffsetMilliseconds = _settings.OffsetFor(_baseProfile.GameId),
             DurationSeconds = 0,
             EventLogDirectory = GuiSettings.EventLogDirectory,
             // オーバレイ表示中はウィンドウ単体キャプチャにする（v0.3.63）。
@@ -319,6 +395,7 @@ public sealed class MainForm : Form
             // 切り替えはセッション開始時点のチェック状態で決まる。
             PrintWindowCapture = _overlayCheck.Checked,
         };
+        AppendLog($"開始: エンジン={options.Engine} オフセット={options.OffsetMilliseconds:+0;-0} ms");
         var session = new PlaySession(_effectiveProfile, options, AppendLog);
         _session = session;
         UpdateRunButtons();
