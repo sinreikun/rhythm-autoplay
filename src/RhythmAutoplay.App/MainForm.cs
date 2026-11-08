@@ -17,6 +17,8 @@ public sealed class MainForm : Form
     private GameProfile _effectiveProfile;
 
     private readonly ComboBox _profileBox = new();
+    private readonly Button _editProfileButton = new();
+    private bool _suppressProfileEvent;
     private readonly TrackBar _offsetBar = new();
     private readonly NumericUpDown _offsetNum = new();
     private readonly Button _playButton = new();
@@ -81,13 +83,18 @@ public sealed class MainForm : Form
         Controls.Add(new Label { Text = "対象ゲーム（プロファイル）", Location = new Point(10, y), AutoSize = true });
         y += 22;
         _profileBox.Location = new Point(10, y);
-        _profileBox.Size = new Size(336, 28);
+        _profileBox.Size = new Size(216, 28);
         _profileBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _profileBox.DisplayMember = nameof(GameProfile.GameId);
         _profileBox.Items.AddRange(_profiles.Cast<object>().ToArray());
         _profileBox.SelectedItem = _baseProfile;
         _profileBox.SelectedIndexChanged += OnProfileChanged;
         Controls.Add(_profileBox);
+        _editProfileButton.Text = "プロファイル編集…";
+        _editProfileButton.Location = new Point(234, y);
+        _editProfileButton.Size = new Size(112, 28);
+        _editProfileButton.Click += OnEditProfilesClicked;
+        Controls.Add(_editProfileButton);
         y += 40;
 
         Controls.Add(new Label { Text = "タイミング調整 [ms]（負で早く、正で遅く）", Location = new Point(10, y), AutoSize = true });
@@ -215,6 +222,10 @@ public sealed class MainForm : Form
 
     private void OnProfileChanged(object? sender, EventArgs e)
     {
+        if (_suppressProfileEvent)
+        {
+            return;
+        }
         if (_profileBox.SelectedItem is not GameProfile selected)
         {
             return;
@@ -226,6 +237,39 @@ public sealed class MainForm : Form
         SaveSettingsSoon();
         _overlay.Invalidate();
         AppendLog($"プロファイル: {selected.GameId}（プロセス {selected.WindowProcessName}.exe）");
+    }
+
+    private void OnEditProfilesClicked(object? sender, EventArgs e)
+    {
+        // 編集画面には、GUI の形状上書きを反映した「実際に効いている」プロファイルを渡す。
+        var effective = _profiles.Select(ApplyOverride).ToList();
+        using var dialog = new ProfileEditorForm(effective, _baseProfile.GameId);
+        dialog.ShowDialog(this);
+        if (!dialog.Changed)
+        {
+            return;
+        }
+        // 保存されたプロファイルはファイル側に形状を持つので、GUI の形状上書きは破棄する。
+        if (dialog.SavedId is string savedId)
+        {
+            _settings.GeometryOverrides.Remove(savedId);
+        }
+        string preferId = dialog.SavedId ?? _baseProfile.GameId;
+        _profiles = ProfileCatalog.LoadAll(msg => AppendLog(msg));
+        _baseProfile = _profiles.FirstOrDefault(p => p.GameId == preferId) ?? _profiles[0];
+        _effectiveProfile = ApplyOverride(_baseProfile);
+        _settings.ProfileId = _baseProfile.GameId;
+        _gameHwnd = IntPtr.Zero;
+        SaveSettingsSoon();
+        _suppressProfileEvent = true;
+        _profileBox.Items.Clear();
+        _profileBox.Items.AddRange(_profiles.Cast<object>().ToArray());
+        _profileBox.SelectedItem = _baseProfile;
+        _suppressProfileEvent = false;
+        _overlay.Invalidate();
+        AppendLog(dialog.SavedId is not null
+            ? $"プロファイル「{dialog.SavedId}」を保存しました。"
+            : "プロファイル一覧を更新しました。");
     }
 
     private void OnOffsetBarChanged(object? sender, EventArgs e)
@@ -329,6 +373,7 @@ public sealed class MainForm : Form
         _playButton.Enabled = !running;
         _dryButton.Enabled = !running;
         _stopButton.Enabled = running;
+        _editProfileButton.Enabled = !running;
     }
 
     private void OnResetGeometryClicked(object? sender, EventArgs e)
