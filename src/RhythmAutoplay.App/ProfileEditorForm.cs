@@ -30,6 +30,25 @@ public sealed class ProfileEditorForm : Form
     private readonly Panel _lanePanel = new();
     private readonly List<TextBox> _redBoxes = new();
     private readonly List<TextBox> _blueBoxes = new();
+    private readonly CheckBox _colorModeCheck = new();
+    private readonly Panel _bindingPanel = new();
+    private readonly List<Panel> _laneContainers = new();
+    private readonly List<BindingEdit> _bindingEdits = new();
+    private readonly ToolTip _toolTip = new();
+    private Label? _laneHeaderLabel;
+    private Label? _redHeaderLabel;
+    private Label? _blueHeaderLabel;
+
+    /// <summary>色指定 1 件分の編集行の状態。</summary>
+    private sealed class BindingEdit
+    {
+        public required int Lane;
+        public required Panel Row;
+        public required TextBox KeyBox;
+        public required FlowLayoutPanel Chips;
+        public required NumericUpDown TolBox;
+        public List<Color> Colors = new();
+    }
     private readonly Label _arrowCaption = new();
     private readonly TextBox _arrowLeft = new();
     private readonly TextBox _arrowRight = new();
@@ -155,6 +174,7 @@ public sealed class ProfileEditorForm : Form
             if (!_loading)
             {
                 RebuildLaneRows((int)_laneCountNum.Value, preserve: true);
+                RebuildBindingRows((int)_laneCountNum.Value, preserve: true);
             }
         };
         _basicGroup.Controls.Add(_laneCountNum);
@@ -164,12 +184,25 @@ public sealed class ProfileEditorForm : Form
         _keysGroup.Text = "キー割り当て";
         _keysGroup.Location = new Point(10, 258);
         _keysGroup.Size = new Size(524, 240);
-        _keysGroup.Controls.Add(new Label { Text = "レーン", Location = new Point(10, 20), AutoSize = true });
-        _keysGroup.Controls.Add(new Label { Text = "赤ノーツのキー", Location = new Point(90, 20), AutoSize = true });
-        _keysGroup.Controls.Add(new Label { Text = "青ノーツのキー", Location = new Point(250, 20), AutoSize = true });
-        _lanePanel.Location = new Point(0, 44);
+        _colorModeCheck.Text = "色で指定する（キーごとに拾う色で判定）";
+        _colorModeCheck.Location = new Point(10, 18);
+        _colorModeCheck.AutoSize = true;
+        _colorModeCheck.CheckedChanged += OnColorModeChanged;
+        _keysGroup.Controls.Add(_colorModeCheck);
+        _laneHeaderLabel = new Label { Text = "レーン", Location = new Point(10, 46), AutoSize = true };
+        _redHeaderLabel = new Label { Text = "赤ノーツのキー", Location = new Point(90, 46), AutoSize = true };
+        _blueHeaderLabel = new Label { Text = "青ノーツのキー", Location = new Point(250, 46), AutoSize = true };
+        _keysGroup.Controls.Add(_laneHeaderLabel);
+        _keysGroup.Controls.Add(_redHeaderLabel);
+        _keysGroup.Controls.Add(_blueHeaderLabel);
+        _lanePanel.Location = new Point(0, 68);
         _lanePanel.Size = new Size(524, 120);
         _keysGroup.Controls.Add(_lanePanel);
+        _bindingPanel.Location = new Point(0, 68);
+        _bindingPanel.Size = new Size(524, 150);
+        _bindingPanel.AutoScroll = true;
+        _bindingPanel.Visible = false;
+        _keysGroup.Controls.Add(_bindingPanel);
         _arrowCaption.Text = "矢印キー（任意）";
         _arrowCaption.AutoSize = true;
         _keysGroup.Controls.Add(_arrowCaption);
@@ -242,7 +275,8 @@ public sealed class ProfileEditorForm : Form
     {
         int laneCount = _redBoxes.Count;
         _lanePanel.Height = laneCount * 30;
-        int arrowY = 44 + _lanePanel.Height + 10;
+        int areaHeight = _colorModeCheck.Checked ? _bindingPanel.Height : _lanePanel.Height;
+        int arrowY = 68 + areaHeight + 10;
         _arrowCaption.Location = new Point(10, arrowY + 3);
         int x = 110;
         foreach (TextBox box in new[] { _arrowLeft, _arrowRight, _arrowUp, _arrowDown })
@@ -284,6 +318,10 @@ public sealed class ProfileEditorForm : Form
                 _redBoxes[i].Text = lane?.RedKey ?? "";
                 _blueBoxes[i].Text = lane?.BlueKey ?? "";
             }
+            _colorModeCheck.Checked = profile.UsesColorBindings;
+            ApplyColorModeVisibility();
+            RebuildBindingRows(profile.LaneCount, preserve: false);
+            LoadBindingsFromProfile(profile);
             _arrowLeft.Text = GetArrow(profile, ArrowDirection.Left);
             _arrowRight.Text = GetArrow(profile, ArrowDirection.Right);
             _arrowUp.Text = GetArrow(profile, ArrowDirection.Up);
@@ -342,6 +380,237 @@ public sealed class ProfileEditorForm : Form
             _blueBoxes.Add(blue);
         }
         LayoutSections();
+    }
+
+    private static ProfileColor ToProfileColor(Color color) => new(color.R, color.G, color.B);
+
+    private void OnColorModeChanged(object? sender, EventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+        ApplyColorModeVisibility();
+    }
+
+    private void ApplyColorModeVisibility()
+    {
+        bool on = _colorModeCheck.Checked;
+        _bindingPanel.Visible = on;
+        _lanePanel.Visible = !on;
+        if (_laneHeaderLabel is not null)
+        {
+            _laneHeaderLabel.Visible = !on;
+        }
+        if (_redHeaderLabel is not null)
+        {
+            _redHeaderLabel.Visible = !on;
+        }
+        if (_blueHeaderLabel is not null)
+        {
+            _blueHeaderLabel.Visible = !on;
+        }
+        LayoutSections();
+    }
+
+    private void RebuildBindingRows(int count, bool preserve)
+    {
+        var saved = new Dictionary<int, List<(string Key, List<Color> Colors, double Tol)>>();
+        if (preserve)
+        {
+            foreach (BindingEdit edit in _bindingEdits)
+            {
+                if (!saved.TryGetValue(edit.Lane, out var list))
+                {
+                    list = new List<(string, List<Color>, double)>();
+                    saved[edit.Lane] = list;
+                }
+                list.Add((edit.KeyBox.Text, new List<Color>(edit.Colors), (double)edit.TolBox.Value));
+            }
+        }
+        _bindingPanel.Controls.Clear();
+        _laneContainers.Clear();
+        _bindingEdits.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            var container = new Panel { Location = new Point(0, 0), Size = new Size(500, 60) };
+            container.Controls.Add(new Label { Text = $"レーン {i + 1}", Location = new Point(10, 6), AutoSize = true });
+            var addButton = new Button { Text = "＋ 割り当て追加", Location = new Point(90, 2), Size = new Size(120, 26) };
+            int laneIndex = i;
+            addButton.Click += (_, _) => AddBindingRow(laneIndex, "", Array.Empty<Color>(), 0.06);
+            container.Controls.Add(addButton);
+            _bindingPanel.Controls.Add(container);
+            _laneContainers.Add(container);
+            if (saved.TryGetValue(i, out var rows))
+            {
+                foreach ((string key, List<Color> colors, double tol) in rows)
+                {
+                    AddBindingRow(i, key, colors, tol);
+                }
+            }
+        }
+        LayoutBindingPanel();
+    }
+
+    private void AddBindingRow(int lane, string key, IEnumerable<Color> colors, double tolerance)
+    {
+        if (_bindingEdits.Count(e => e.Lane == lane) >= GameProfile.MaxColorBindingsPerLane)
+        {
+            MessageBox.Show(this, $"1 レーンの色割り当ては {GameProfile.MaxColorBindingsPerLane} 件までです。",
+                "プロファイル編集", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var row = new Panel { Size = new Size(500, 36) };
+        row.Controls.Add(new Label { Text = "キー", Location = new Point(24, 7), AutoSize = true });
+        var keyBox = new TextBox
+        {
+            Location = new Point(56, 4),
+            Size = new Size(52, 26),
+            CharacterCasing = CharacterCasing.Upper,
+            MaxLength = 10,
+            Text = key,
+        };
+        row.Controls.Add(keyBox);
+        var chips = new FlowLayoutPanel
+        {
+            Location = new Point(116, 3),
+            Size = new Size(230, 30),
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+        };
+        row.Controls.Add(chips);
+        row.Controls.Add(new Label { Text = "許容", Location = new Point(350, 7), AutoSize = true });
+        var tolBox = new NumericUpDown { Location = new Point(386, 4), Size = new Size(60, 26) };
+        ConfigureNum(tolBox, 0.01, 0.30, 2, 0.01, tolerance);
+        row.Controls.Add(tolBox);
+        var edit = new BindingEdit { Lane = lane, Row = row, KeyBox = keyBox, Chips = chips, TolBox = tolBox };
+        edit.Colors.AddRange(colors);
+        var deleteButton = new Button { Text = "削除", Location = new Point(452, 3), Size = new Size(44, 28) };
+        deleteButton.Click += (_, _) =>
+        {
+            _bindingEdits.Remove(edit);
+            _laneContainers[lane].Controls.Remove(row);
+            LayoutBindingPanel();
+        };
+        row.Controls.Add(deleteButton);
+        _bindingEdits.Add(edit);
+        _laneContainers[lane].Controls.Add(row);
+        RefreshChips(edit);
+        LayoutBindingPanel();
+    }
+
+    private void LayoutBindingPanel()
+    {
+        int y = 0;
+        for (int i = 0; i < _laneContainers.Count; i++)
+        {
+            Panel container = _laneContainers[i];
+            int rowY = 32;
+            foreach (BindingEdit edit in _bindingEdits.Where(e => e.Lane == i))
+            {
+                edit.Row.Location = new Point(0, rowY);
+                rowY += 38;
+            }
+            container.Location = new Point(0, y);
+            container.Height = rowY + 2;
+            y += container.Height + 4;
+        }
+        _bindingPanel.AutoScrollMinSize = new Size(0, y);
+    }
+
+    private void RefreshChips(BindingEdit edit)
+    {
+        edit.Chips.Controls.Clear();
+        foreach (Color color in edit.Colors.ToList())
+        {
+            Color captured = color;
+            var chip = new Panel
+            {
+                Size = new Size(22, 22),
+                BackColor = captured,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = new Padding(1, 3, 1, 0),
+                Cursor = Cursors.Hand,
+            };
+            _toolTip.SetToolTip(chip, $"#{captured.R:X2}{captured.G:X2}{captured.B:X2}（クリックで削除）");
+            chip.Click += (_, _) =>
+            {
+                edit.Colors.Remove(captured);
+                RefreshChips(edit);
+            };
+            edit.Chips.Controls.Add(chip);
+        }
+        var add = new Button { Text = "+", Size = new Size(26, 24), Margin = new Padding(2, 2, 0, 0) };
+        add.Click += (_, _) => OnAddColorClicked(edit);
+        edit.Chips.Controls.Add(add);
+        if (edit.Colors.Count == 0)
+        {
+            edit.Chips.Controls.Add(new Label
+            {
+                Text = "色が未指定です",
+                AutoSize = true,
+                ForeColor = Color.Firebrick,
+                Margin = new Padding(4, 6, 0, 0),
+            });
+        }
+    }
+
+    private void OnAddColorClicked(BindingEdit edit)
+    {
+        using var picker = new ColorPickForm(_processBox.Text);
+        if (picker.ShowDialog(this) == DialogResult.OK && picker.SelectedColor != Color.Empty)
+        {
+            edit.Colors.Add(picker.SelectedColor);
+            RefreshChips(edit);
+        }
+    }
+
+    private void LoadBindingsFromProfile(GameProfile profile)
+    {
+        for (int i = 0; i < _laneContainers.Count; i++)
+        {
+            LaneBinding? lane = profile.Lanes.FirstOrDefault(l => l.Lane == i);
+            if (lane?.Bindings is not { Count: > 0 } bindings)
+            {
+                continue;
+            }
+            foreach (NoteColorBinding binding in bindings)
+            {
+                AddBindingRow(i, binding.Key,
+                    binding.Colors.Select(c => Color.FromArgb(c.R, c.G, c.B)), binding.HueTolerance);
+            }
+        }
+    }
+
+    /// <summary>検証なしでキー割り当て欄からレーン一覧を作る（複製・保存で共用）。</summary>
+    private List<LaneBinding> BuildLanesLenient()
+    {
+        var lanes = new List<LaneBinding>();
+        if (_colorModeCheck.Checked)
+        {
+            for (int i = 0; i < (int)_laneCountNum.Value; i++)
+            {
+                var edits = _bindingEdits.Where(e => e.Lane == i).ToList();
+                var bindings = edits.Select(e => new NoteColorBinding(
+                    e.KeyBox.Text.Trim(),
+                    e.Colors.Select(ToProfileColor).ToList(),
+                    (double)e.TolBox.Value)).ToList();
+                string red = bindings.Count > 0 ? bindings[0].Key : "";
+                string blue = bindings.Count > 1 ? bindings[1].Key : red;
+                lanes.Add(new LaneBinding(i, red, blue)
+                {
+                    Bindings = bindings.Count > 0 ? bindings : null,
+                });
+            }
+        }
+        else
+        {
+            for (int i = 0; i < _redBoxes.Count; i++)
+            {
+                lanes.Add(new LaneBinding(i, _redBoxes[i].Text.Trim(), _blueBoxes[i].Text.Trim()));
+            }
+        }
+        return lanes;
     }
 
     private void UpdateDeleteButton()
@@ -425,11 +694,7 @@ public sealed class ProfileEditorForm : Form
     /// <summary>検証なしで現在の入力欄からプロファイルを作る（複製用）。</summary>
     private GameProfile ReadFieldsLenient()
     {
-        var lanes = new List<LaneBinding>();
-        for (int i = 0; i < _redBoxes.Count; i++)
-        {
-            lanes.Add(new LaneBinding(i, _redBoxes[i].Text.Trim(), _blueBoxes[i].Text.Trim()));
-        }
+        var lanes = BuildLanesLenient();
         var arrows = new Dictionary<ArrowDirection, string>();
         void AddArrow(ArrowDirection dir, TextBox box)
         {
@@ -552,19 +817,52 @@ public sealed class ProfileEditorForm : Form
         }
 
         var lanes = new List<LaneBinding>();
-        for (int i = 0; i < _redBoxes.Count; i++)
+        if (_colorModeCheck.Checked)
         {
-            string red = _redBoxes[i].Text.Trim();
-            string blue = _blueBoxes[i].Text.Trim();
-            if (CheckKey(red, $"レーン {i + 1}（赤）") is string e1)
+            for (int i = 0; i < (int)_laneCountNum.Value; i++)
             {
-                return e1;
+                var edits = _bindingEdits.Where(edt => edt.Lane == i).ToList();
+                if (edits.Count == 0)
+                {
+                    return $"レーン {i + 1} に色割り当てがありません。「＋ 割り当て追加」で追加してください。";
+                }
+                var bindings = new List<NoteColorBinding>();
+                for (int j = 0; j < edits.Count; j++)
+                {
+                    BindingEdit edit = edits[j];
+                    string key = edit.KeyBox.Text.Trim();
+                    if (CheckKey(key, $"レーン {i + 1} の色割り当て {j + 1}") is string ek)
+                    {
+                        return ek;
+                    }
+                    if (edit.Colors.Count == 0)
+                    {
+                        return $"レーン {i + 1} の色割り当て {j + 1} に色が指定されていません。「+」からスポイトで色を追加してください。";
+                    }
+                    bindings.Add(new NoteColorBinding(key,
+                        edit.Colors.Select(ToProfileColor).ToList(), (double)edit.TolBox.Value));
+                }
+                string redB = bindings[0].Key;
+                string blueB = bindings.Count > 1 ? bindings[1].Key : redB;
+                lanes.Add(new LaneBinding(i, redB, blueB) { Bindings = bindings });
             }
-            if (CheckKey(blue, $"レーン {i + 1}（青）") is string e2)
+        }
+        else
+        {
+            for (int i = 0; i < _redBoxes.Count; i++)
             {
-                return e2;
+                string red = _redBoxes[i].Text.Trim();
+                string blue = _blueBoxes[i].Text.Trim();
+                if (CheckKey(red, $"レーン {i + 1}（赤）") is string e1)
+                {
+                    return e1;
+                }
+                if (CheckKey(blue, $"レーン {i + 1}（青）") is string e2)
+                {
+                    return e2;
+                }
+                lanes.Add(new LaneBinding(i, red, blue));
             }
-            lanes.Add(new LaneBinding(i, red, blue));
         }
 
         var arrows = new Dictionary<ArrowDirection, string>();

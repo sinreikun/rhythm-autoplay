@@ -91,7 +91,20 @@ public static class ProfileCatalog
             judgmentLineY = profile.JudgmentLineY,
             tapHoldMilliseconds = profile.TapHoldMilliseconds,
             lanes = profile.Lanes.OrderBy(l => l.Lane)
-                .Select(l => new { lane = l.Lane, redKey = l.RedKey, blueKey = l.BlueKey }).ToArray(),
+                .Select(l => new
+                {
+                    lane = l.Lane,
+                    redKey = l.RedKey,
+                    blueKey = l.BlueKey,
+                    bindings = l.Bindings is { Count: > 0 }
+                        ? l.Bindings.Select(b => new
+                        {
+                            key = b.Key,
+                            colors = b.Colors.Select(c => c.ToHex()).ToArray(),
+                            hueTolerance = b.HueTolerance,
+                        }).ToArray()
+                        : null,
+                }).ToArray(),
             arrowKeys = arrowKeys.Count > 0 ? arrowKeys : null,
             geometry = new
             {
@@ -138,10 +151,42 @@ public static class ProfileCatalog
         var lanes = new List<LaneBinding>();
         foreach (JsonElement laneEl in root.GetProperty("lanes").EnumerateArray())
         {
-            lanes.Add(new LaneBinding(
-                laneEl.GetProperty("lane").GetInt32(),
-                laneEl.GetProperty("redKey").GetString()!,
-                laneEl.GetProperty("blueKey").GetString()!));
+            int laneIndex = laneEl.GetProperty("lane").GetInt32();
+            List<NoteColorBinding>? bindings = null;
+            if (laneEl.TryGetProperty("bindings", out JsonElement bindingsEl))
+            {
+                bindings = new List<NoteColorBinding>();
+                foreach (JsonElement bindingEl in bindingsEl.EnumerateArray())
+                {
+                    var colors = new List<ProfileColor>();
+                    foreach (JsonElement colorEl in bindingEl.GetProperty("colors").EnumerateArray())
+                    {
+                        colors.Add(ProfileColor.Parse(colorEl.GetString()!));
+                    }
+                    double tolerance = bindingEl.TryGetProperty("hueTolerance", out JsonElement tolEl)
+                        ? Math.Clamp(tolEl.GetDouble(), 0.01, 0.30)
+                        : 0.06;
+                    bindings.Add(new NoteColorBinding(
+                        bindingEl.GetProperty("key").GetString()!, colors, tolerance));
+                }
+                if (bindings.Count > GameProfile.MaxColorBindingsPerLane)
+                {
+                    throw new InvalidDataException(
+                        $"レーン {laneIndex + 1} の色割り当てが上限 {GameProfile.MaxColorBindingsPerLane} 件を超えています");
+                }
+            }
+            string? redKey = laneEl.TryGetProperty("redKey", out JsonElement redEl) ? redEl.GetString() : null;
+            string? blueKey = laneEl.TryGetProperty("blueKey", out JsonElement blueEl) ? blueEl.GetString() : null;
+            if (bindings is not { Count: > 0 })
+            {
+                // 従来形式は赤/青キーが必須（欠けていれば読み込みエラーにする）。
+                redKey ??= laneEl.GetProperty("redKey").GetString();
+                blueKey ??= laneEl.GetProperty("blueKey").GetString();
+            }
+            // 色指定だけのレーンでは赤/青キーを先頭の割り当てで補う（フォールバック用）。
+            redKey ??= bindings![0].Key;
+            blueKey ??= bindings!.Count > 1 ? bindings[1].Key : redKey;
+            lanes.Add(new LaneBinding(laneIndex, redKey, blueKey) { Bindings = bindings });
         }
         lanes.Sort((a, b) => a.Lane.CompareTo(b.Lane));
 

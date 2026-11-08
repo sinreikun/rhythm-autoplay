@@ -166,6 +166,14 @@ public sealed class PlaySession
         bool useLine = string.Equals(_options.Engine, "line", StringComparison.OrdinalIgnoreCase);
         bool useHybrid = string.Equals(_options.Engine, "hybrid", StringComparison.OrdinalIgnoreCase);
         bool useLine1 = string.Equals(_options.Engine, "line1", StringComparison.OrdinalIgnoreCase);
+        // 色指定プロファイルは line1 でだけ解釈できる。他のエンジンでは
+        // 色ファミリーとして誤って発火するため、line1 に固定する。
+        if (_profile.UsesColorBindings && !useLine1)
+        {
+            Log("警告: 色指定プロファイルのため、検出エンジンを line1 に固定します。");
+            useBand = useLine = useHybrid = false;
+            useLine1 = true;
+        }
         detector.LineMode = useLine || useHybrid;
         detector.SingleLineMode = useLine1;
         detector.CaptureLineSamples = _options.LogLineSamples;

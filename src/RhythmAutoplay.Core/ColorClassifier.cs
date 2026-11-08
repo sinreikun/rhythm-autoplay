@@ -98,6 +98,42 @@ public static class ColorClassifier
         return FromHue(h);
     }
 
+    /// <summary>色相環（0..1）での最短距離。</summary>
+    public static double HueDistance(double a, double b)
+    {
+        double d = Math.Abs(a - b) % 1.0;
+        return d > 0.5 ? 1.0 - d : d;
+    }
+
+    /// <summary>
+    /// 色指定プロファイルの照合: スポイトで拾った色に近いかを判定する。
+    /// 床は通常分類と同じ（v≥0.30 / s≥0.45）で、暗い・薄い画素は
+    /// 背景やレーン面として捨てる。色相だけが拾った色との距離で決まる。
+    /// </summary>
+    public static bool MatchesPickedColor(byte r, byte g, byte b, ProfileColor target, double hueTolerance)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        if (v < 0.30 || s < 0.45)
+        {
+            return false;
+        }
+        return HueDistance(h, target.Hsv.H) <= hueTolerance;
+    }
+
+    /// <summary>
+    /// 色指定の緩い照合: 矢印の白帯の上に重なったノーツ用。通常分類の
+    /// 緩い読みと同じ床（v&gt;0.55 / s&gt;0.15）で色相だけを見る。
+    /// </summary>
+    public static bool MatchesPickedColorLoose(byte r, byte g, byte b, ProfileColor target, double hueTolerance)
+    {
+        var (h, s, v) = RgbToHsv(r, g, b);
+        if (v < 0.55 || s < 0.15)
+        {
+            return false;
+        }
+        return HueDistance(h, target.Hsv.H) <= hueTolerance;
+    }
+
     private static PixelColor FromHue(double h)
     {
         if (h < 0.045 || h >= 0.90)

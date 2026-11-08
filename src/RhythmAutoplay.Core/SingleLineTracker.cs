@@ -73,10 +73,11 @@ public sealed class SingleLineTracker : ILaneTracker
     private readonly double _judgmentW;
     private readonly double _vanishingY;
     private readonly LaneNoteTracker _arrowTracker;
-    private readonly bool[] _prevPresence = new bool[5];
-    private readonly double[] _lastCrossAt = new double[5];
+    private static readonly int KindSlots = Enum.GetValues<NoteKind>().Length;
+    private readonly bool[] _prevPresence = new bool[KindSlots];
+    private readonly double[] _lastCrossAt = new double[KindSlots];
     private readonly double[] _rowLead = new double[3];
-    private readonly bool[,] _prevRowPresence = new bool[5, 3];
+    private readonly bool[,] _prevRowPresence = new bool[KindSlots, 3];
     private readonly List<(int Kind, int Row, double EdgeMid)> _rowEdges = new();
     private readonly List<(int Kind, double Cross0, double CreatedAt)> _pendings = new();
     private double _lastFrameTime = double.NaN;
@@ -97,7 +98,7 @@ public sealed class SingleLineTracker : ILaneTracker
             spawnGateY: spawnGateY,
             scheduleHorizonSeconds: 1.2,
             commitWindowSeconds: commitWindowSeconds);
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < KindSlots; k++)
         {
             _lastCrossAt[k] = double.NegativeInfinity;
         }
@@ -155,8 +156,8 @@ public sealed class SingleLineTracker : ILaneTracker
         // 傾き路線は閉鎖し、単ライン＋固定レートが line1 の完成形。
         // 集約在席 (PresenceRow なし) が発火の引き金、行別の在席
         // (PresenceRow -1/0/+1) は横断時刻の補間専用（v0.3.83）。
-        var presence = new bool[5];
-        var rowPresence = new bool[5, 3];
+        var presence = new bool[KindSlots];
+        var rowPresence = new bool[KindSlots, 3];
         foreach (NoteDetection d in laneDetections)
         {
             if (!d.IsLinePresence || d.Kind == NoteKind.Arrow || d.Kind == NoteKind.Purple)
@@ -180,7 +181,7 @@ public sealed class SingleLineTracker : ILaneTracker
         double crossTime = timeSeconds - _frameDelta / 2;
 
         // 行の立ち上がりを記録する（補間の材料）。古いものは捨てる。
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < KindSlots; k++)
         {
             if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
             {
@@ -244,7 +245,7 @@ public sealed class SingleLineTracker : ILaneTracker
 
         // 集約の立ち上がりが新しい横断。確定は次フレームの Observe で
         // 行うため、ここでは保留に積む。
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < KindSlots; k++)
         {
             if (k == (int)NoteKind.Arrow || k == (int)NoteKind.Purple)
             {

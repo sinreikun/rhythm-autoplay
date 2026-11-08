@@ -13,6 +13,18 @@ public enum NoteKind
     Yellow,
     /// <summary>横長ノーツ: 矢印方向の入力（レバー/方向キー）。</summary>
     Arrow,
+
+    // 色指定プロファイル（レーンの Bindings）専用の種別。番号は既存の
+    // ログ互換のため末尾に足す（Binding0 + n = そのレーンの n 番目の
+    // 色割り当て）。色ファミリー方式の検出器では生成されない。
+    /// <summary>色割り当て 0 番に一致したノーツ。</summary>
+    Binding0,
+    /// <summary>色割り当て 1 番に一致したノーツ。</summary>
+    Binding1,
+    /// <summary>色割り当て 2 番に一致したノーツ。</summary>
+    Binding2,
+    /// <summary>色割り当て 3 番に一致したノーツ。</summary>
+    Binding3,
 }
 
 /// <summary>矢印ノーツの方向。</summary>

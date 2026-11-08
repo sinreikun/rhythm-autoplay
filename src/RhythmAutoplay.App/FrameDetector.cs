@@ -114,6 +114,30 @@ public sealed class FrameDetector
     /// LastLine1States に記録する（PL1 診断）。紫相の証拠は「未解決の
     /// 重なり」として数だけ記録し、発火させない。
     /// </summary>
+    /// <summary>
+    /// 色指定の照合: そのピクセルがどの色割り当てに一致するか（先勝ち）。
+    /// 一致しなければ -1。床は通常分類と対になる 2 段（通常／波の内側の緩い読み）。
+    /// </summary>
+    private static int MatchBindingIndex(
+        IReadOnlyList<NoteColorBinding> bindings, byte r, byte g, byte b, bool loose)
+    {
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            NoteColorBinding binding = bindings[i];
+            foreach (ProfileColor color in binding.Colors)
+            {
+                bool hit = loose
+                    ? ColorClassifier.MatchesPickedColorLoose(r, g, b, color, binding.HueTolerance)
+                    : ColorClassifier.MatchesPickedColor(r, g, b, color, binding.HueTolerance);
+                if (hit)
+                {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
     private void ScanSingleLine(
         CapturedFrame frame, List<(int TopPy, int BottomPy)> bands,
         List<NoteDetection> results)
@@ -135,6 +159,13 @@ public sealed class FrameDetector
         {
             double cx = geo.LaneCenterX(lane, _profile.LaneCount, lineY);
             double halfSpread = geo.LaneWidthAt(_profile.LaneCount, lineY) * w * 0.30;
+            // 色指定プロファイルのレーンは、色ファミリーではなく指定色で数える。
+            IReadOnlyList<NoteColorBinding>? bindings = lane < _profile.Lanes.Count
+                ? _profile.Lanes[lane].Bindings
+                : null;
+            bool useBindings = bindings is { Count: > 0 };
+            var bindingCounts = new int[GameProfile.MaxColorBindingsPerLane];
+            var rowBindingCounts = new int[3, GameProfile.MaxColorBindingsPerLane];
             var strictCounts = new int[6];
             var rowStrictCounts = new int[3, 6];
             var dimCounts = new int[6];
@@ -179,6 +210,19 @@ public sealed class FrameDetector
                         // 緩い分類で拾う（波赤・波青などのパターン）。
                         c = ColorClassifier.ClassifyLoose(r, g, b);
                     }
+                    if (useBindings)
+                    {
+                        int bi = MatchBindingIndex(bindings!, r, g, b, loose: false);
+                        if (bi < 0 && inBand)
+                        {
+                            bi = MatchBindingIndex(bindings!, r, g, b, loose: true);
+                        }
+                        if (bi >= 0)
+                        {
+                            bindingCounts[bi]++;
+                            rowBindingCounts[rowIdx, bi]++;
+                        }
+                    }
                     if (c != PixelColor.None)
                     {
                         strictCounts[(int)c]++;
@@ -210,6 +254,19 @@ public sealed class FrameDetector
                     dimMask |= 1 << (int)ToKind(pc);
                 }
             }
+            if (useBindings)
+            {
+                // PL1 診断のマスクは色割り当てのビットで出す（薄い読みは使わない）。
+                strictMask = 0;
+                dimMask = 0;
+                for (int bi = 0; bi < bindings!.Count; bi++)
+                {
+                    if (bindingCounts[bi] >= 2)
+                    {
+                        strictMask |= 1 << ((int)NoteKind.Binding0 + bi);
+                    }
+                }
+            }
             // パターンの確定: 証拠の最も多い色ファミリーを、そのレーンの
             // 原子色として 1 件だけ在席にする（勝者総取り）。v0.3.74 で
             // 「証拠のある色を全部独立に出す」方式を試したが、合意集合
@@ -229,7 +286,27 @@ public sealed class FrameDetector
                     best = pc;
                 }
             }
-            if (best != PixelColor.None)
+            if (useBindings)
+            {
+                // 色指定も勝者総取りは同じ（証拠最多の割り当てだけを在席にする）。
+                int bestBi = -1;
+                int bestBiCount = 1;
+                for (int bi = 0; bi < bindings!.Count; bi++)
+                {
+                    if (bindingCounts[bi] > bestBiCount)
+                    {
+                        bestBiCount = bindingCounts[bi];
+                        bestBi = bi;
+                    }
+                }
+                if (bestBi >= 0)
+                {
+                    results.Add(new NoteDetection(
+                        lane, (NoteKind)((int)NoteKind.Binding0 + bestBi), null, cx, lineY,
+                        frame.TimeSeconds, IsLinePresence: true));
+                }
+            }
+            else if (best != PixelColor.None)
             {
                 results.Add(new NoteDetection(
                     lane, ToKind(best), null, cx, lineY, frame.TimeSeconds,
@@ -254,7 +331,28 @@ public sealed class FrameDetector
                             rowBest = pc;
                         }
                     }
-                    if (rowBest != PixelColor.None)
+                    if (useBindings)
+                    {
+                        int rowBestBi = -1;
+                        int rowBestBiCount = 1;
+                        for (int bi = 0; bi < bindings!.Count; bi++)
+                        {
+                            if (rowBindingCounts[r, bi] > rowBestBiCount)
+                            {
+                                rowBestBiCount = rowBindingCounts[r, bi];
+                                rowBestBi = bi;
+                            }
+                        }
+                        if (rowBestBi >= 0)
+                        {
+                            int py = Math.Clamp(pyC + (r - 1) * step, 0, h - 1);
+                            results.Add(new NoteDetection(
+                                lane, (NoteKind)((int)NoteKind.Binding0 + rowBestBi), null, cx, py / (double)h,
+                                frame.TimeSeconds,
+                                IsLinePresence: true, PresenceRow: r - 1));
+                        }
+                    }
+                    else if (rowBest != PixelColor.None)
                     {
                         int py = Math.Clamp(pyC + (r - 1) * step, 0, h - 1);
                         results.Add(new NoteDetection(
